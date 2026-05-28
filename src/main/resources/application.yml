@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: moaje-asset
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+    consumer:
+      group-id: moaje-asset
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+server:
+  port: 8082
+
+moaje:
+  id:
+    tsid:
+      node: 0
+  asset:
+    banking:
+      grpc-host: localhost
+      grpc-port: 9091
+    grpc:
+      server:
+        port: 9090
+    kafka:
+      topics:
+        asset-transfer-requested: moaje.asset.transfer-requested
+        banking-transfer-completed: moaje.banking.transfer-completed
+        banking-transfer-failed: moaje.banking.transfer-failed
+        transaction-succeeded: transaction_succeeded_events

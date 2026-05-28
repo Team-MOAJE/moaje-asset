@@ -1,0 +1,15 @@
+﻿package com.moaje.asset.application.cashflow
+
+import java.math.BigDecimal
+import java.time.LocalDate
+
+data class DailyCashflowCommand(
+    val userId: Long,
+    val expectedIncome: BigDecimal,
+    val fixedExpenses: BigDecimal,
+    val eventBuffer: BigDecimal,
+    val daysUntilNextPayday: Int,
+    val snapshotDate: LocalDate = LocalDate.now(),
+    val forceRefresh: Boolean = false,
+)
+
