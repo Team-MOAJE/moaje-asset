@@ -2,7 +2,7 @@ FROM eclipse-temurin:17-jdk-jammy AS builder
 
 WORKDIR /workspace
 
-ENV GRADLE_OPTS="-Dorg.gradle.jvmargs=-Xmx384m -Dorg.gradle.daemon=false"
+ENV GRADLE_OPTS="-Dorg.gradle.jvmargs=-Xmx768m -Dorg.gradle.daemon=false"
 
 COPY moaje-grpc-contracts ./moaje-grpc-contracts
 COPY moaje-asset ./moaje-asset

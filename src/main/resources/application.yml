@@ -15,6 +15,14 @@ spring:
     redis:
       host: localhost
       port: 6379
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    # 빈 DB는 V1부터 생성한다. 기존 DB는 별도 전환 검토 없이 baseline으로 건너뛰면 컬럼 누락이 생긴다.
+    baseline-on-migrate: false
+    locations: classpath:db/migration/{vendor}
 
 server:
   port: 8082
@@ -27,12 +35,37 @@ moaje:
     banking:
       grpc-host: localhost
       grpc-port: 9091
+      projection-reconciliation-timeout-ms: 5000
+      tls:
+        enabled: ${ASSET_TO_BANKING_GRPC_TLS_ENABLED:true}
+        certificate-chain-path: ${ASSET_GRPC_CLIENT_CERTIFICATE_CHAIN_PATH:}
+        private-key-path: ${ASSET_GRPC_CLIENT_PRIVATE_KEY_PATH:}
+        trust-certificate-collection-path: ${BANKING_GRPC_SERVER_TRUST_CERTIFICATE_COLLECTION_PATH:}
+        override-authority: ${BANKING_GRPC_TLS_OVERRIDE_AUTHORITY:}
+    reconciliation:
+      projection:
+        enabled: ${ASSET_PROJECTION_SYNC_ENABLED:false}
+        fixed-delay-ms: ${ASSET_PROJECTION_SYNC_DELAY_MS:5000}
+        initial-delay-ms: 30000
+        batch-size: 20
+        lease-duration-ms: 30000
+        lease-safety-margin-ms: 5000
+        audit-interval-ms: ${ASSET_PROJECTION_AUDIT_INTERVAL_MS:30000}
+        max-attempts: 10
+        base-backoff-ms: 5000
+        max-backoff-ms: 300000
     grpc:
       server:
         port: 9090
+        tls:
+          enabled: ${ASSET_GRPC_TLS_ENABLED:true}
+          certificate-chain-path: ${ASSET_GRPC_TLS_CERTIFICATE_CHAIN_PATH:}
+          private-key-path: ${ASSET_GRPC_TLS_PRIVATE_KEY_PATH:}
+          trust-certificate-collection-path: ${ASSET_GRPC_TLS_TRUST_CERTIFICATE_COLLECTION_PATH:}
     kafka:
       topics:
-        asset-transfer-requested: moaje.asset.transfer-requested
+        banking-account-created: account_created_events
         banking-transfer-completed: moaje.banking.transfer-completed
         banking-transfer-failed: moaje.banking.transfer-failed
+        banking-transfer-reversed: moaje.banking.transfer-reversed
         transaction-succeeded: transaction_succeeded_events

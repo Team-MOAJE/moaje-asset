@@ -7,7 +7,7 @@ data class TsidIdProperties(
     val node: Int = 0,
 ) {
     init {
-        require(node in 0..1023) { "TSID node??0 ?댁긽 1023 ?댄븯?ъ빞 ?⑸땲??" }
+        require(node in 0..1023) { "TSID node는 0 이상 1023 이하여야 합니다." }
     }
 }
 

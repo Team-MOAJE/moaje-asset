@@ -11,3 +11,4 @@ class AssetApplicationTests {
     fun contextLoads() {
     }
 }
+

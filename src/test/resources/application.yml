@@ -9,21 +9,33 @@ spring:
     password:
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: validate
     properties:
       hibernate:
         dialect: org.hibernate.dialect.H2Dialect
+  flyway:
+    enabled: true
+    locations: classpath:db/migration/{vendor}
 
 moaje:
   id:
     tsid:
       node: 0
   asset:
+    banking:
+      tls:
+        enabled: false
+    reconciliation:
+      projection:
+        enabled: false
     grpc:
       server:
         port: 0
+        tls:
+          enabled: false
     kafka:
       topics:
-        asset-transfer-requested: moaje.asset.transfer-requested
+        banking-account-created: account_created_events
         banking-transfer-completed: moaje.banking.transfer-completed
         banking-transfer-failed: moaje.banking.transfer-failed
+        banking-transfer-reversed: moaje.banking.transfer-reversed
