@@ -13,6 +13,9 @@ import java.time.LocalDateTime
 interface AccountRepository : JpaRepository<Account, Long> {
     fun findByUserId(userId: String): List<Account>
 
+    @Query("select distinct a.userId from Account a order by a.userId")
+    fun findDistinctUserIds(): List<String>
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select a from Account a where a.id = :id")
     fun findByIdForUpdate(@Param("id") id: Long): Account?

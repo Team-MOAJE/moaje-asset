@@ -21,7 +21,7 @@ class GatewayPrincipalFilter : OncePerRequestFilter() {
     override fun doFilterInternal(request: HttpServletRequest, response: HttpServletResponse, chain: FilterChain) {
         val values = request.getHeaders(USER_HEADER).toList()
         val subject = values.singleOrNull()
-        if (subject == null || !subject.matches(Regex("[A-Za-z0-9._:@-]{1,100}"))) {
+        if (subject == null || !subject.matches(Regex("[0-9]{1,19}"))) {
             response.status = 401
             response.contentType = "application/json"
             response.writer.write("""{"code":"UNAUTHENTICATED","message":"Verified Gateway identity is required."}""")

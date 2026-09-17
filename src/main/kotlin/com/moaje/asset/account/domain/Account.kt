@@ -81,6 +81,7 @@ class Account(
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     var updatedAt: LocalDateTime = LocalDateTime.now(),
+
 ) {
     fun requireTransferable() {
         require(status == AccountStatus.ACTIVE) { "활성 계좌만 거래할 수 있습니다." }
@@ -107,7 +108,7 @@ class Account(
         this.balance = balance
         status = when (externalStatus.uppercase()) {
             "ACTIVE" -> AccountStatus.ACTIVE
-            "CANCELED", "CLOSED" -> AccountStatus.CLOSED
+            "CANCELED", "CLOSED", "FROZEN" -> AccountStatus.CLOSED
             else -> throw IllegalArgumentException("지원하지 않는 계정계 계좌 상태입니다. status=$externalStatus")
         }
     }
@@ -216,4 +217,3 @@ class Account(
         return delay.coerceAtMost(max)
     }
 }
-

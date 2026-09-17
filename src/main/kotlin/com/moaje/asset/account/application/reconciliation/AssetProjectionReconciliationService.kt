@@ -10,6 +10,8 @@ import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.Duration
+import java.time.Instant
+import java.time.Instant.*
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.util.UUID
@@ -54,7 +56,7 @@ class AssetProjectionReconciliationService(
 
             val cursor = accountRepository.findById(accountId).orElseThrow {
                 IllegalArgumentException("대사할 Asset 계좌를 찾을 수 없습니다. accountId=$accountId")
-            }.snapshotCursorAt?.toInstant(ZoneOffset.UTC) ?: java.time.Instant.EPOCH
+            }.snapshotCursorAt?.toInstant(ZoneOffset.UTC) ?: EPOCH
 
             val transferIds = transactionHistoryRepository
                 .findByAccountIdAndReconciliationRequiredTrueOrderByCreatedAtAsc(accountId)

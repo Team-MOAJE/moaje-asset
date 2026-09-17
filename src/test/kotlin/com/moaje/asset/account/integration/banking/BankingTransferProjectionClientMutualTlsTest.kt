@@ -1,6 +1,7 @@
 package com.moaje.asset.account.integration.banking
 
 import com.moaje.grpc.banking.BankingServiceGrpc
+import com.moaje.grpc.banking.ExternalProjectionTransaction
 import com.moaje.grpc.banking.GetAccountProjectionSnapshotRequest
 import com.moaje.grpc.banking.GetAccountProjectionSnapshotResponse
 import com.moaje.common.Money
@@ -51,6 +52,14 @@ class BankingTransferProjectionClientMutualTlsTest {
                         .setBalance(Money.newBuilder().setAmount(12_000).setCurrency("KRW"))
                         .setAccountStatus("ACTIVE")
                         .setAsOfEpochMillis(Instant.parse("2026-01-01T00:00:00Z").toEpochMilli())
+                        .addTransactions(
+                            ExternalProjectionTransaction.newBuilder()
+                                .setExternalTransactionId("EXT-1")
+                                .setType("WITHDRAWAL")
+                                .setAmount(Money.newBuilder().setAmount(4_500).setCurrency("KRW"))
+                                .setOccurredAtEpochMillis(Instant.parse("2025-12-31T12:00:00Z").toEpochMilli())
+                                .setMerchantName("스타벅스 강남점"),
+                        )
                         .build(),
                 )
                 responseObserver.onCompleted()
@@ -83,6 +92,7 @@ class BankingTransferProjectionClientMutualTlsTest {
             // then
             assertThat(snapshot.accountId).isEqualTo(101L)
             assertThat(snapshot.balance).isEqualByComparingTo("12000")
+            assertThat(snapshot.transactions.single().merchantName).isEqualTo("스타벅스 강남점")
         } finally {
             client.destroy()
             server.shutdownNow()

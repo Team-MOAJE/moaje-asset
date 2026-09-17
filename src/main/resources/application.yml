@@ -27,6 +27,14 @@ spring:
 server:
   port: 8082
 
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    config-url: /docs/asset/v3/api-docs/swagger-config
+    url: /docs/asset/v3/api-docs
+
 moaje:
   id:
     tsid:
@@ -69,3 +77,5 @@ moaje:
         banking-transfer-failed: moaje.banking.transfer-failed
         banking-transfer-reversed: moaje.banking.transfer-reversed
         transaction-succeeded: transaction_succeeded_events
+        monthly-cashflow-aggregated: moaje.asset.monthly-cashflow-aggregated
+        category-cashflow-aggregated: moaje.asset.category-cashflow-aggregated

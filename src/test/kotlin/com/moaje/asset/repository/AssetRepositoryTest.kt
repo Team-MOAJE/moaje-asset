@@ -7,6 +7,7 @@ import com.moaje.asset.cashflow.domain.DailyCashflowSnapshot
 import com.moaje.asset.outbox.persistence.TransactionalOutboxRepository
 import com.moaje.asset.outbox.domain.TransactionalOutbox
 import com.moaje.asset.transfer.persistence.TransactionHistoryRepository
+import com.moaje.asset.transfer.domain.TransactionCategory
 import com.moaje.asset.transfer.domain.TransactionHistory
 import com.moaje.asset.transfer.domain.TransactionStatus
 import com.moaje.asset.transfer.domain.TransactionType
@@ -70,6 +71,31 @@ class AssetRepositoryTest(
 
         assertNotNull(saved.id)
         assertEquals(saved.id, found?.id)
+    }
+
+    @Test
+    @DisplayName("거래내역의 가맹점명과 카테고리를 저장하고 조회한다")
+    fun saveTransactionMerchantAndCategory() {
+        // given: 소비 집계에 사용할 가맹점과 Asset 분류 결과가 확정된 거래다.
+        val saved = transactionHistoryRepository.saveAndFlush(
+            TransactionHistory(
+                accountId = 1L,
+                publicTransferId = "MOAJE-BNK-CATEGORY-TEST",
+                type = TransactionType.WITHDRAW,
+                amount = BigDecimal("6500.0000"),
+                status = TransactionStatus.SUCCESS,
+                idempotencyKey = "category-idem-1",
+                merchantName = "모아제 카페",
+                categoryCode = TransactionCategory.CAFE,
+            ),
+        )
+
+        // when
+        val found = transactionHistoryRepository.findById(saved.id!!).orElseThrow()
+
+        // then: 두 필드가 DB 컬럼과 Enum 문자열에 올바르게 매핑되어야 한다.
+        assertEquals("모아제 카페", found.merchantName)
+        assertEquals(TransactionCategory.CAFE, found.categoryCode)
     }
 
     @Test

@@ -137,5 +137,6 @@ class BankingTransferProjectionClient(
             currency = amount.currency,
             occurredAt = Instant.ofEpochMilli(occurredAtEpochMillis),
             completedAt = if (hasCompletedAtEpochMillis()) Instant.ofEpochMilli(completedAtEpochMillis) else null,
+            merchantName = if (hasMerchantName()) merchantName else null,
         )
 }

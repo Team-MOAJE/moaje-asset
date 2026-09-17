@@ -7,12 +7,16 @@ import jakarta.persistence.Id
 import jakarta.persistence.Index
 import jakarta.persistence.Lob
 import jakarta.persistence.Table
+import jakarta.persistence.UniqueConstraint
 import org.hibernate.annotations.CreationTimestamp
 import java.time.LocalDateTime
 
 @Entity
 @Table(
     name = "transactional_outbox",
+    uniqueConstraints = [
+        UniqueConstraint(name = "uk_transactional_outbox_deduplication_key", columnNames = ["deduplication_key"]),
+    ],
     indexes = [
         Index(name = "idx_transactional_outbox_published", columnList = "is_published"),
         Index(name = "idx_transactional_outbox_created_at", columnList = "created_at"),
@@ -39,6 +43,10 @@ class TransactionalOutbox(
 
     @Column(name = "delivery_excluded", nullable = false)
     var deliveryExcluded: Boolean = false,
+
+    // 같은 사용자·월·revision의 집계 이벤트가 중복 생성되는 것을 DB가 마지막으로 차단한다.
+    @Column(name = "deduplication_key", length = 180)
+    var deduplicationKey: String? = null,
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false)

@@ -2,6 +2,12 @@
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.moaje.asset.outbox.persistence.TransactionalOutboxRepository
+import com.moaje.asset.cashflow.application.service.CategoryCashflowOutboxPayload
+import com.moaje.asset.cashflow.application.service.MonthlyCashflowAggregationService
+import com.moaje.asset.cashflow.application.service.MonthlyCashflowOutboxPayload
+import com.moaje.events.asset.CategoryCashflowAggregatedEvent
+import com.moaje.events.asset.CategoryCashflowAmount
+import com.moaje.events.asset.MonthlyCashflowAggregatedEvent
 import com.moaje.common.Money as ProtoMoney
 import com.moaje.events.asset.TransactionSucceededEvent
 import org.springframework.boot.context.properties.ConfigurationProperties
@@ -17,6 +23,8 @@ class AssetKafkaTopicsProperties {
     var bankingTransferCompleted: String = "moaje.banking.transfer-completed"
     var bankingTransferFailed: String = "moaje.banking.transfer-failed"
     var transactionSucceeded: String = "transaction_succeeded_events"
+    var monthlyCashflowAggregated: String = "moaje.asset.monthly-cashflow-aggregated"
+    var categoryCashflowAggregated: String = "moaje.asset.category-cashflow-aggregated"
 }
 
 @Component
@@ -51,6 +59,68 @@ class AssetOutboxKafkaPublisher(
 
             outbox.markPublished()
         }
+    }
+
+    @Scheduled(fixedDelayString = "\${moaje.asset.kafka.aggregate-outbox-publish-delay-ms:1000}")
+    @Transactional
+    fun publishPendingCashflowEvents() {
+        publishMonthlyCashflows()
+        publishCategoryCashflows()
+    }
+
+    private fun publishMonthlyCashflows() {
+        transactionalOutboxRepository
+            .findTop100ByAggregateTypeAndPublishedFalseOrderByCreatedAtAsc(
+                MonthlyCashflowAggregationService.MONTHLY_CASHFLOW_AGGREGATED,
+            )
+            .forEach { outbox ->
+                val payload = objectMapper.readValue(outbox.payload, MonthlyCashflowOutboxPayload::class.java)
+                val event = MonthlyCashflowAggregatedEvent.newBuilder()
+                    .setEventId(payload.eventId)
+                    .setUserId(payload.userId)
+                    .setYearMonth(payload.yearMonth)
+                    .setRevision(payload.revision)
+                    .setIncomeAmount(payload.incomeAmount.toProtoMoney("KRW"))
+                    .setExpenseAmount(payload.expenseAmount.toProtoMoney("KRW"))
+                    .setTransferAmount(payload.transferAmount.toProtoMoney("KRW"))
+                    .setCalculatedAt(payload.calculatedAt.toString())
+                    .build()
+                sendAndMarkPublished(outbox, topics.monthlyCashflowAggregated, payload.userId, event.toByteArray())
+            }
+    }
+
+    private fun publishCategoryCashflows() {
+        transactionalOutboxRepository
+            .findTop100ByAggregateTypeAndPublishedFalseOrderByCreatedAtAsc(
+                MonthlyCashflowAggregationService.CATEGORY_CASHFLOW_AGGREGATED,
+            )
+            .forEach { outbox ->
+                val payload = objectMapper.readValue(outbox.payload, CategoryCashflowOutboxPayload::class.java)
+                val event = CategoryCashflowAggregatedEvent.newBuilder()
+                    .setEventId(payload.eventId)
+                    .setUserId(payload.userId)
+                    .setYearMonth(payload.yearMonth)
+                    .setRevision(payload.revision)
+                    .addAllCategories(payload.categories.map { item ->
+                        CategoryCashflowAmount.newBuilder()
+                            .setCategory(item.category)
+                            .setAmount(item.amount.toProtoMoney("KRW"))
+                            .build()
+                    })
+                    .setCalculatedAt(payload.calculatedAt.toString())
+                    .build()
+                sendAndMarkPublished(outbox, topics.categoryCashflowAggregated, payload.userId, event.toByteArray())
+            }
+    }
+
+    private fun sendAndMarkPublished(
+        outbox: com.moaje.asset.outbox.domain.TransactionalOutbox,
+        topic: String,
+        key: String,
+        value: ByteArray,
+    ) {
+        kafkaTemplate.send(topic, key, value).get(KAFKA_SEND_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        outbox.markPublished()
     }
 
     private fun TransactionSucceededOutboxPayload.toProtoEvent(): TransactionSucceededEvent {

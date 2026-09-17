@@ -26,6 +26,7 @@ import com.moaje.asset.transfer.persistence.ProcessedEventRepository
 import com.moaje.asset.transfer.persistence.TransactionHistoryRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneOffset
@@ -37,6 +38,7 @@ class TransferApplicationService(
     private val transactionHistoryRepository: TransactionHistoryRepository,
     private val processedEventRepository: ProcessedEventRepository,
     private val transactionalOutboxRepository: TransactionalOutboxRepository,
+    private val categoryClassifier: TransactionCategoryClassifier,
     private val idGenerator: IdGenerator,
     private val objectMapper: ObjectMapper,
 ) : TransferUseCase {
@@ -86,7 +88,8 @@ class TransferApplicationService(
 
         account.applyDebit(command.amount)
         account.recordEventApplied()
-
+        val type = TransactionType.TRANSFER
+        val merchantName : String? = null
         val transaction = transactionHistoryRepository.save(
             TransactionHistory(
                 accountId = account.id ?: throw IllegalStateException("계좌 ID가 없습니다."),
@@ -98,6 +101,10 @@ class TransferApplicationService(
                 status = TransactionStatus.SUCCESS,
                 idempotencyKey = "banking-effect:${command.bankingTransferId}:${command.accountId}:$balanceChangeType",
                 externalTransactionId = command.externalTransactionId,
+
+                // 개인 간 송금에는 merchant가 없음
+                merchantName = merchantName,
+                categoryCode = categoryClassifier.classify(type, merchantName),
             ),
         )
 
@@ -190,17 +197,17 @@ class TransferApplicationService(
      */
     @Transactional
     override fun applyBankingTransferReversed(command: ApplyBankingTransferReversedCommand) {
-        if (processedEventRepository.existsById(command.eventId)) {
+        if (processedEventRepository.existsById(command.eventId)) { // 이미 처리된 이벤트라면 아무것도 하지않음.
             return
         }
 
         val account = accountRepository.findByIdForUpdate(command.accountId)
             ?: throw IllegalArgumentException("계좌를 찾을 수 없습니다.")
 
-        if (processedEventRepository.existsById(command.eventId)) {
+        if (processedEventRepository.existsById(command.eventId)) { // 이미 처리된 이벤트라면 아무것도 하지 않음.
             return
         }
-        require(account.userId == command.userId) { "사용자의 계좌가 아닙니다." }
+        require(account.userId == command.userId) { "사용자의 계좌가 아닙니다." } // 계좌 소유권 검증
 
         if (linkImportedEffect(command.externalReversalTransactionId, command.bankingTransferId, account,
                 command.amount, BalanceChangeType.REVERSAL_IN)) {
@@ -290,7 +297,7 @@ class TransferApplicationService(
             require(state.accountId == accountId) { "Banking 응답의 accountId가 대사 계좌와 다릅니다." }
             require(state.principalId == account.userId) { "Banking 거래 소유자와 Asset 계좌 소유자가 다릅니다." }
             require(state.currency == "KRW") { "현재 Asset Projection은 KRW 거래만 지원합니다." }
-            require(state.amount > java.math.BigDecimal.ZERO) { "대사 거래 금액은 0보다 커야 합니다." }
+            require(state.amount > BigDecimal.ZERO) { "대사 거래 금액은 0보다 커야 합니다." }
 
             repairedEffects += when (state.status) {
                 BankingProjectionTransferStatus.SUCCEEDED -> repairSucceededTransfer(account, state)
@@ -325,6 +332,46 @@ class TransferApplicationService(
     }
 
     /**
+     * 사용자가 요청한 Refresh Snapshot을 Asset Projection에 반영한다.
+     * 대사 상태를 만들지는 않지만, 대사와 같은 검증·중복 방지 로직을 사용해 잔액과 거래내역을 함께 갱신한다.
+     */
+    @Transactional
+    fun refreshProjectionFromSnapshot(
+        accountId: Long,
+        principalId: String,
+        observedLastEventAppliedAt: LocalDateTime?,
+        snapshot: BankingAccountProjectionSnapshot,
+    ): Account {
+        val account = accountRepository.findByIdForUpdate(accountId)
+            ?: throw IllegalArgumentException("계좌를 찾을 수 없습니다.")
+
+        require(account.userId == principalId) { "사용자의 계좌가 아닙니다." }
+        require(snapshot.principalId == principalId) { "Banking Snapshot 소유자와 요청 사용자가 다릅니다." }
+
+        /*
+         * Snapshot 조회가 진행되는 동안 Kafka 이벤트가 반영되면 조회 시작 당시의 잔액은 오래된 값이 된다.
+         * 이벤트 반영 시각이 달라졌다면 저장을 중단해 최신 Kafka 결과를 과거 Snapshot으로 덮어쓰지 않는다.
+         */
+        check(account.lastEventAppliedAt == observedLastEventAppliedAt) {
+            "계좌 Refresh 중 새 금융 이벤트가 반영되었습니다. 다시 시도해 주세요."
+        }
+
+        applyAccountSnapshot(account, snapshot)
+
+        val unresolved = transactionHistoryRepository
+            .existsByAccountIdAndReconciliationRequiredTrue(accountId)
+        if (unresolved) {
+            account.markSyncRequired()
+        } else {
+            account.recordSyncResolved(
+                now = LocalDateTime.now(),
+                cursor = LocalDateTime.ofInstant(snapshot.asOf, ZoneOffset.UTC),
+            )
+        }
+        return account
+    }
+
+    /**
      * 계정계 Snapshot은 현재 잔액의 기준값이고 transactions는 누락된 사용자 조회 이력을 설명하는 증분 자료다.
      * 따라서 이력을 다시 증감 계산하지 않고 잔액을 절대값으로 교체해야 중복·누락 이벤트가 누적 오차를 만들지 않는다.
      * 계좌 Lock과 대사 lease를 잡은 동일 트랜잭션에서 처리해 이력만 저장되거나 잔액만 바뀌는 부분 성공을 막는다.
@@ -355,7 +402,7 @@ class TransferApplicationService(
     ) {
         require(external.externalTransactionId.isNotBlank()) { "외부 거래 식별자는 비어 있을 수 없습니다." }
         require(external.currency == "KRW") { "현재 Asset Projection은 KRW 거래만 지원합니다." }
-        require(external.amount > java.math.BigDecimal.ZERO) { "외부 거래 금액은 0보다 커야 합니다." }
+        require(external.amount > BigDecimal.ZERO) { "외부 거래 금액은 0보다 커야 합니다." }
 
         val accountId = account.id ?: throw IllegalStateException("계좌 ID가 없습니다.")
         transactionHistoryRepository.findByExternalTransactionId(external.externalTransactionId)?.let { existing ->
@@ -375,19 +422,38 @@ class TransferApplicationService(
             existing.createdAt = existing.externalOccurredAt!!
             existing.externalCompletedAt = external.completedAt?.let { LocalDateTime.ofInstant(it, ZoneOffset.UTC) }
             existing.externalType = external.type
+            /*
+             * 이전 버전에서 가맹점 없이 저장된 거래만 Snapshot 원본으로 보충한다.
+             * 사용자가 이미 확정한 분류값까지 자동 분류기가 덮어쓰지 않도록 UNCATEGORIZED일 때만 다시 분류한다.
+             */
+            if (existing.merchantName.isNullOrBlank() && !external.merchantName.isNullOrBlank()) {
+                existing.merchantName = external.merchantName
+            }
+            if (existing.categoryCode == com.moaje.asset.transfer.domain.TransactionCategory.UNCATEGORIZED) {
+                existing.categoryCode = categoryClassifier.classify(existing.type, existing.merchantName)
+            }
             saveTransactionSucceededOutbox(existing, account, snapshotAsOf)
             return
         }
+
+        val type = external.type.toSnapshotTransactionType()
+        val merchantName = external.merchantName
 
         val transaction = transactionHistoryRepository.save(
             TransactionHistory(
                 accountId = accountId,
                 publicTransferId = idGenerator.nextBankingTransferPublicId(),
-                type = external.type.toSnapshotTransactionType(),
+                type = type,
                 amount = external.amount,
                 status = TransactionStatus.SUCCESS,
                 idempotencyKey = "external:${external.externalTransactionId}",
                 externalTransactionId = external.externalTransactionId,
+
+                // >> 집계용 field 추가
+                merchantName = merchantName,
+                categoryCode = categoryClassifier.classify(type, merchantName),
+                // << 집계용 field 추가
+
                 externalOccurredAt = LocalDateTime.ofInstant(external.occurredAt, ZoneOffset.UTC),
                 externalCompletedAt = external.completedAt?.let { LocalDateTime.ofInstant(it, ZoneOffset.UTC) },
                 externalType = external.type,
@@ -611,7 +677,7 @@ class TransferApplicationService(
 
     private fun linkImportedEffect(
         externalId: String?, transferId: Long, account: Account,
-        amount: java.math.BigDecimal, effect: BalanceChangeType,
+        amount: BigDecimal, effect: BalanceChangeType,
     ): Boolean {
         if (externalId.isNullOrBlank()) return false
         val existing = transactionHistoryRepository.findByExternalTransactionId(externalId) ?: return false

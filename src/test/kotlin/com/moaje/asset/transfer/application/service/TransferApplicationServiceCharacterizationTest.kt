@@ -35,6 +35,7 @@ class TransferApplicationServiceCharacterizationTest {
         transactionHistoryRepository = transactionHistoryRepository,
         processedEventRepository = processedEventRepository,
         transactionalOutboxRepository = transactionalOutboxRepository,
+        categoryClassifier = TransactionCategoryClassifier(),
         idGenerator = IdGenerator(),
         objectMapper = ObjectMapper()
             .registerKotlinModule()

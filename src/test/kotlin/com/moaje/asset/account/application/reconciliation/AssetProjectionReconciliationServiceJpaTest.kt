@@ -15,6 +15,7 @@ import com.moaje.asset.account.domain.AccountSyncStatus
 import com.moaje.asset.account.persistence.AccountRepository
 import com.moaje.asset.common.id.IdGenerator
 import com.moaje.asset.outbox.persistence.TransactionalOutboxRepository
+import com.moaje.asset.transfer.application.service.TransactionCategoryClassifier
 import com.moaje.asset.transfer.application.service.TransferApplicationService
 import com.moaje.asset.transfer.domain.BalanceChangeType
 import com.moaje.asset.transfer.domain.TransactionHistory
@@ -24,6 +25,7 @@ import com.moaje.asset.transfer.persistence.ProcessedEventRepository
 import com.moaje.asset.transfer.persistence.TransactionHistoryRepository
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
@@ -66,6 +68,7 @@ class AssetProjectionReconciliationServiceJpaTest(
             transactionHistoryRepository,
             processedEventRepository,
             outboxRepository,
+            TransactionCategoryClassifier(),
             IdGenerator(),
             ObjectMapper().registerKotlinModule().registerModule(JavaTimeModule())
                 .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS),
@@ -475,6 +478,71 @@ class AssetProjectionReconciliationServiceJpaTest(
             ).doesNotContain(account.id)
             assertThat(meterRegistry.find("asset.reconciliation.projection.retry.exhausted.total").counter()!!.count())
                 .isEqualTo(1.0)
+        }
+    }
+
+    @Nested
+    @DisplayName("사용자 계좌 Refresh")
+    inner class ManualAccountRefresh {
+        @Test
+        @DisplayName("Banking Snapshot의 잔액·상태·새 거래내역을 하나의 Projection으로 반영한다")
+        fun refreshAppliesWholeSnapshot() {
+            // given: Asset에는 이전 잔액만 있고 Mock Banking Snapshot에는 새 출금이 포함되어 있다.
+            val account = accountRepository.saveAndFlush(Account(userId = "user-1", balance = BigDecimal("10000")))
+            val snapshot = BankingAccountProjectionSnapshot(
+                accountId = account.id!!,
+                principalId = "user-1",
+                balance = BigDecimal("9000"),
+                currency = "KRW",
+                accountStatus = "ACTIVE",
+                asOf = Instant.parse("2026-01-01T00:01:00Z"),
+                transactions = listOf(externalTransaction("EXT-REFRESH-1", "WITHDRAWAL", "1000")),
+            )
+
+            // when
+            transferService.refreshProjectionFromSnapshot(account.id!!, "user-1", account.lastEventAppliedAt, snapshot)
+
+            // then: 잔액뿐 아니라 이력과 다음 증분 조회 cursor까지 함께 최신화되어야 한다.
+            val refreshed = accountRepository.findById(account.id!!).orElseThrow()
+            assertThat(refreshed.balance).isEqualByComparingTo("9000")
+            assertThat(refreshed.syncStatus).isEqualTo(AccountSyncStatus.SYNCED)
+            assertThat(refreshed.snapshotCursorAt).isEqualTo(LocalDateTime.ofInstant(snapshot.asOf, java.time.ZoneOffset.UTC))
+            assertThat(transactionHistoryRepository.findByAccountId(account.id!!))
+                .singleElement()
+                .extracting<String> { it.externalTransactionId }
+                .isEqualTo("EXT-REFRESH-1")
+        }
+
+        @Test
+        @DisplayName("Snapshot 조회 중 Kafka 이벤트가 반영되면 오래된 Refresh 결과를 저장하지 않는다")
+        fun eventAppliedDuringRefreshRejectsStaleSnapshot() {
+            // given: 원격 조회를 시작할 때는 이벤트가 없었지만, Snapshot 저장 전 새 이벤트가 반영되었다.
+            val account = accountRepository.saveAndFlush(Account(userId = "user-1", balance = BigDecimal("10000")))
+            val observedLastEventAppliedAt = account.lastEventAppliedAt
+            account.applyDebit(BigDecimal("1000"))
+            account.recordEventApplied()
+            accountRepository.saveAndFlush(account)
+            val staleSnapshot = BankingAccountProjectionSnapshot(
+                accountId = account.id!!,
+                principalId = "user-1",
+                balance = BigDecimal("10000"),
+                currency = "KRW",
+                accountStatus = "ACTIVE",
+                asOf = Instant.now(),
+                transactions = emptyList(),
+            )
+
+            // when / then: 최신 9,000원을 과거 Snapshot의 10,000원으로 되돌리면 안 된다.
+            assertThatThrownBy {
+                transferService.refreshProjectionFromSnapshot(
+                    account.id!!,
+                    "user-1",
+                    observedLastEventAppliedAt,
+                    staleSnapshot,
+                )
+            }.isInstanceOf(IllegalStateException::class.java)
+                .hasMessageContaining("새 금융 이벤트")
+            assertThat(accountRepository.findById(account.id!!).orElseThrow().balance).isEqualByComparingTo("9000")
         }
     }
 

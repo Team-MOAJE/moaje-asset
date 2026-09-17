@@ -47,6 +47,7 @@ data class BankingExternalProjectionTransaction(
     val currency: String,
     val occurredAt: Instant,
     val completedAt: Instant? = null,
+    val merchantName: String? = null,
 )
 
 interface BankingAccountProjectionGateway {

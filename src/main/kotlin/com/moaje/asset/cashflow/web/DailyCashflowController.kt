@@ -4,7 +4,6 @@ import com.moaje.asset.cashflow.application.usecase.DailyCashflowCommand
 import com.moaje.asset.cashflow.application.usecase.DailyCashflowResult
 import com.moaje.asset.cashflow.application.usecase.CalculateDailyCashflowUseCase
 import jakarta.validation.Valid
-import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Positive
 import jakarta.validation.constraints.PositiveOrZero
 import org.springframework.web.bind.annotation.PostMapping
@@ -13,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import java.math.BigDecimal
 import java.time.LocalDate
+import java.security.Principal
 
 @RestController
 @RequestMapping("/api/v1/assets/cashflow")
@@ -22,7 +22,7 @@ class DailyCashflowController(
     @PostMapping("/daily-limit")
     fun calculateDailyLimit(
         @Valid @RequestBody request: DailyCashflowRequest,
-        principal: java.security.Principal,
+        principal: Principal,
     ): DailyCashflowResult {
         return dailyCashflowService.calculate(request.toCommand(principal.name))
     }
