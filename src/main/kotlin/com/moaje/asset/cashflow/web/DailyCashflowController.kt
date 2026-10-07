@@ -1,8 +1,8 @@
 ﻿package com.moaje.asset.cashflow.web
 
-import com.moaje.asset.cashflow.application.usecase.DailyCashflowCommand
-import com.moaje.asset.cashflow.application.usecase.DailyCashflowResult
-import com.moaje.asset.cashflow.application.usecase.CalculateDailyCashflowUseCase
+import com.moaje.asset.cashflow.application.model.DailyCashflowCommand
+import com.moaje.asset.cashflow.application.model.DailyCashflowResult
+import com.moaje.asset.cashflow.application.service.DailyCashflowService
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Positive
 import jakarta.validation.constraints.PositiveOrZero
@@ -17,7 +17,7 @@ import java.security.Principal
 @RestController
 @RequestMapping("/api/v1/assets/cashflow")
 class DailyCashflowController(
-    private val dailyCashflowService: CalculateDailyCashflowUseCase,
+    private val dailyCashflowService: DailyCashflowService,
 ) {
     @PostMapping("/daily-limit")
     fun calculateDailyLimit(
@@ -54,5 +54,4 @@ data class DailyCashflowRequest(
         )
     }
 }
-
 

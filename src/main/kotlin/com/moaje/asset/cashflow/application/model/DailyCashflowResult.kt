@@ -1,4 +1,4 @@
-﻿package com.moaje.asset.cashflow.application.usecase
+﻿package com.moaje.asset.cashflow.application.model
 
 import java.math.BigDecimal
 import java.time.LocalDate
