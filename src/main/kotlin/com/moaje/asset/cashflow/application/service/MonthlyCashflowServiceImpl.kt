@@ -1,10 +1,12 @@
 package com.moaje.asset.cashflow.application.service
 
+import com.moaje.asset.cashflow.application.model.MonthlyCashflowOutboxPayload
+import com.moaje.asset.cashflow.application.model.CategoryCashflowOutboxItem
+import com.moaje.asset.cashflow.application.model.CategoryCashflowOutboxPayload
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.moaje.asset.cashflow.application.usecase.CategoryCashflowItem
-import com.moaje.asset.cashflow.application.usecase.CategoryCashflowResult
-import com.moaje.asset.cashflow.application.usecase.MonthlyCashflowResult
-import com.moaje.asset.cashflow.application.usecase.MonthlyCashflowUseCase
+import com.moaje.asset.cashflow.application.model.CategoryCashflowItem
+import com.moaje.asset.cashflow.application.model.CategoryCashflowResult
+import com.moaje.asset.cashflow.application.model.MonthlyCashflowResult
 import com.moaje.asset.cashflow.domain.MonthlyCashflowAggregate
 import com.moaje.asset.cashflow.domain.MonthlyCategoryCashflow
 import com.moaje.asset.cashflow.persistence.MonthlyCashflowAggregateRepository
@@ -23,13 +25,13 @@ import java.time.YearMonth
 import java.util.UUID
 
 @Service
-class MonthlyCashflowAggregationService(
+class MonthlyCashflowServiceImpl(
     private val transactionHistoryRepository: TransactionHistoryRepository,
     private val aggregateRepository: MonthlyCashflowAggregateRepository,
     private val categoryRepository: MonthlyCategoryCashflowRepository,
     private val outboxRepository: TransactionalOutboxRepository,
     private val objectMapper: ObjectMapper,
-) : MonthlyCashflowUseCase {
+) : MonthlyCashflowService {
 
     @Transactional
     override fun aggregate(userId: String, yearMonth: YearMonth): MonthlyCashflowResult {
@@ -193,25 +195,3 @@ class MonthlyCashflowAggregationService(
         const val CATEGORY_CASHFLOW_AGGREGATED = "CATEGORY_CASHFLOW_AGGREGATED"
     }
 }
-
-data class MonthlyCashflowOutboxPayload(
-    val eventId: String,
-    val userId: String,
-    val yearMonth: String,
-    val revision: Long,
-    val incomeAmount: BigDecimal,
-    val expenseAmount: BigDecimal,
-    val transferAmount: BigDecimal,
-    val calculatedAt: LocalDateTime,
-)
-
-data class CategoryCashflowOutboxItem(val category: String, val amount: BigDecimal)
-
-data class CategoryCashflowOutboxPayload(
-    val eventId: String,
-    val userId: String,
-    val yearMonth: String,
-    val revision: Long,
-    val categories: List<CategoryCashflowOutboxItem>,
-    val calculatedAt: LocalDateTime,
-)

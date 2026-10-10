@@ -8,9 +8,9 @@ import com.moaje.asset.account.domain.Account
 import com.moaje.asset.account.persistence.AccountRepository
 import com.moaje.asset.common.id.IdGenerator
 import com.moaje.asset.outbox.persistence.TransactionalOutboxRepository
-import com.moaje.asset.transfer.application.usecase.ApplyBankingTransferCompletedCommand
-import com.moaje.asset.transfer.application.usecase.ApplyBankingTransferFailedCommand
-import com.moaje.asset.transfer.application.usecase.ApplyBankingTransferReversedCommand
+import com.moaje.asset.transfer.application.model.ApplyBankingTransferCompletedCommand
+import com.moaje.asset.transfer.application.model.ApplyBankingTransferFailedCommand
+import com.moaje.asset.transfer.application.model.ApplyBankingTransferReversedCommand
 import com.moaje.asset.account.domain.AccountSyncStatus
 import com.moaje.asset.transfer.domain.BalanceChangeType
 import com.moaje.asset.transfer.domain.TransactionStatus
@@ -26,17 +26,17 @@ import java.math.BigDecimal
 import java.time.Instant
 
 @DataJpaTest
-class TransferApplicationServiceIdempotencyJpaTest(
+class TransferServiceImplIdempotencyJpaTest(
     @Autowired private val accountRepository: AccountRepository,
     @Autowired private val transactionHistoryRepository: TransactionHistoryRepository,
     @Autowired private val processedEventRepository: ProcessedEventRepository,
     @Autowired private val transactionalOutboxRepository: TransactionalOutboxRepository,
 ) {
-    private lateinit var service: TransferApplicationService
+    private lateinit var service: TransferServiceImpl
 
     @BeforeEach
     fun setUp() {
-        service = TransferApplicationService(
+        service = TransferServiceImpl(
             accountRepository = accountRepository,
             transactionHistoryRepository = transactionHistoryRepository,
             processedEventRepository = processedEventRepository,

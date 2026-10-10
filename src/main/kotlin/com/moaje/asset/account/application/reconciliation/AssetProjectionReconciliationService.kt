@@ -1,9 +1,10 @@
 package com.moaje.asset.account.application.reconciliation
 
-import com.moaje.asset.account.application.gateway.BankingAccountProjectionGateway
-import com.moaje.asset.account.application.gateway.BankingTransferProjectionGateway
+import com.moaje.asset.account.application.model.AssetProjectionReconciliationResult
+import com.moaje.asset.account.application.query.BankingAccountSnapshotQuery
+import com.moaje.asset.account.application.query.BankingTransferQuery
 import com.moaje.asset.account.persistence.AccountRepository
-import com.moaje.asset.transfer.application.service.TransferApplicationService
+import com.moaje.asset.transfer.application.service.TransferServiceImpl
 import com.moaje.asset.transfer.persistence.TransactionHistoryRepository
 import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest
@@ -20,9 +21,9 @@ import java.util.UUID
 class AssetProjectionReconciliationService(
     private val accountRepository: AccountRepository,
     private val transactionHistoryRepository: TransactionHistoryRepository,
-    private val bankingGateway: BankingTransferProjectionGateway,
-    private val accountProjectionGateway: BankingAccountProjectionGateway,
-    private val transferApplicationService: TransferApplicationService,
+    private val bankingTransferQuery: BankingTransferQuery,
+    private val bankingAccountSnapshotQuery: BankingAccountSnapshotQuery,
+    private val transferServiceImpl: TransferServiceImpl,
     private val properties: AssetProjectionReconciliationProperties,
     private val metrics: AssetProjectionReconciliationMetrics,
     private val transactionTemplate: TransactionTemplate,
@@ -66,13 +67,13 @@ class AssetProjectionReconciliationService(
             try {
                 // transferId가 없는 외부 입출금 또는 역직렬화 DLT도 계좌 Snapshot 비교로 복구할 수 있다.
                 // 두 원격 조회를 모두 끝낸 뒤 하나의 Asset DB 트랜잭션에서 반영해 부분 복구 상태를 commit하지 않는다.
-                val snapshot = accountProjectionGateway.getAccountSnapshot(accountId, cursor)
-                val states = if (transferIds.isEmpty()) emptyList() else bankingGateway.getTransferStates(accountId, transferIds)
+                val snapshot = bankingAccountSnapshotQuery.getAccountSnapshot(accountId, cursor)
+                val states = if (transferIds.isEmpty()) emptyList() else bankingTransferQuery.getTransferStates(accountId, transferIds)
                 val returnedIds = states.map { it.transferId }
                 require(returnedIds.size == returnedIds.distinct().size && returnedIds.toSet() == transferIds.toSet()) {
                     "Banking 대사 응답의 transferId 집합이 요청과 일치하지 않습니다."
                 }
-                val result = transferApplicationService.repairProjection(
+                val result = transferServiceImpl.repairProjection(
                     accountId = accountId,
                     lockOwner = lockOwner,
                     states = states,

@@ -1,4 +1,4 @@
-package com.moaje.asset.transfer.application.usecase
+package com.moaje.asset.transfer.application.model
 
 import java.math.BigDecimal
 import java.time.Instant

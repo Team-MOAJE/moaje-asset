@@ -1,11 +1,11 @@
 package com.moaje.asset.account.integration.banking
 
-import com.moaje.asset.account.application.gateway.BankingProjectionTransferStatus
-import com.moaje.asset.account.application.gateway.BankingAccountProjectionGateway
-import com.moaje.asset.account.application.gateway.BankingAccountProjectionSnapshot
-import com.moaje.asset.account.application.gateway.BankingExternalProjectionTransaction
-import com.moaje.asset.account.application.gateway.BankingTransferProjectionGateway
-import com.moaje.asset.account.application.gateway.BankingTransferProjectionState
+import com.moaje.asset.account.application.model.BankingProjectionTransferStatus
+import com.moaje.asset.account.application.query.BankingAccountSnapshotQuery
+import com.moaje.asset.account.application.model.BankingAccountProjectionSnapshot
+import com.moaje.asset.account.application.model.BankingExternalProjectionTransaction
+import com.moaje.asset.account.application.query.BankingTransferQuery
+import com.moaje.asset.account.application.model.BankingTransferProjectionState
 import com.moaje.grpc.banking.BankingServiceGrpc
 import com.moaje.grpc.banking.GetTransferProjectionStatesRequest
 import com.moaje.grpc.banking.GetAccountProjectionSnapshotRequest
@@ -22,9 +22,9 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 
 @Component
-class BankingTransferProjectionClient(
+class BankingGrpcClient(
     private val properties: BankingGrpcClientProperties,
-) : BankingTransferProjectionGateway, BankingAccountProjectionGateway, DisposableBean {
+) : BankingTransferQuery, BankingAccountSnapshotQuery, DisposableBean {
     private val channelDelegate = lazy {
         buildChannel()
     }

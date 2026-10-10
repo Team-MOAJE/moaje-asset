@@ -9,7 +9,7 @@ import java.time.YearMonth
 @Component
 class MonthlyCashflowAggregationWorker(
     private val accountRepository: AccountRepository,
-    private val aggregationService: MonthlyCashflowAggregationService,
+    private val aggregationService: MonthlyCashflowServiceImpl,
     private val clock: Clock = Clock.systemDefaultZone(),
 ) {
     /** 매월 1일에는 직전 월의 최초 집계를 만들며, 거래가 없는 사용자도 0원 결과를 만든다. */

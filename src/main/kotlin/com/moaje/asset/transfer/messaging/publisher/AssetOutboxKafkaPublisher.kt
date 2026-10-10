@@ -2,9 +2,9 @@
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.moaje.asset.outbox.persistence.TransactionalOutboxRepository
-import com.moaje.asset.cashflow.application.service.CategoryCashflowOutboxPayload
-import com.moaje.asset.cashflow.application.service.MonthlyCashflowAggregationService
-import com.moaje.asset.cashflow.application.service.MonthlyCashflowOutboxPayload
+import com.moaje.asset.cashflow.application.model.CategoryCashflowOutboxPayload
+import com.moaje.asset.cashflow.application.service.MonthlyCashflowServiceImpl
+import com.moaje.asset.cashflow.application.model.MonthlyCashflowOutboxPayload
 import com.moaje.events.asset.CategoryCashflowAggregatedEvent
 import com.moaje.events.asset.CategoryCashflowAmount
 import com.moaje.events.asset.MonthlyCashflowAggregatedEvent
@@ -71,7 +71,7 @@ class AssetOutboxKafkaPublisher(
     private fun publishMonthlyCashflows() {
         transactionalOutboxRepository
             .findTop100ByAggregateTypeAndPublishedFalseOrderByCreatedAtAsc(
-                MonthlyCashflowAggregationService.MONTHLY_CASHFLOW_AGGREGATED,
+                MonthlyCashflowServiceImpl.MONTHLY_CASHFLOW_AGGREGATED,
             )
             .forEach { outbox ->
                 val payload = objectMapper.readValue(outbox.payload, MonthlyCashflowOutboxPayload::class.java)
@@ -92,7 +92,7 @@ class AssetOutboxKafkaPublisher(
     private fun publishCategoryCashflows() {
         transactionalOutboxRepository
             .findTop100ByAggregateTypeAndPublishedFalseOrderByCreatedAtAsc(
-                MonthlyCashflowAggregationService.CATEGORY_CASHFLOW_AGGREGATED,
+                MonthlyCashflowServiceImpl.CATEGORY_CASHFLOW_AGGREGATED,
             )
             .forEach { outbox ->
                 val payload = objectMapper.readValue(outbox.payload, CategoryCashflowOutboxPayload::class.java)

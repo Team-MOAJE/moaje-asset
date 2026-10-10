@@ -4,19 +4,19 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
-import com.moaje.asset.account.application.gateway.BankingProjectionTransferStatus
-import com.moaje.asset.account.application.gateway.BankingAccountProjectionGateway
-import com.moaje.asset.account.application.gateway.BankingAccountProjectionSnapshot
-import com.moaje.asset.account.application.gateway.BankingExternalProjectionTransaction
-import com.moaje.asset.account.application.gateway.BankingTransferProjectionGateway
-import com.moaje.asset.account.application.gateway.BankingTransferProjectionState
+import com.moaje.asset.account.application.model.BankingProjectionTransferStatus
+import com.moaje.asset.account.application.query.BankingAccountSnapshotQuery
+import com.moaje.asset.account.application.model.BankingAccountProjectionSnapshot
+import com.moaje.asset.account.application.model.BankingExternalProjectionTransaction
+import com.moaje.asset.account.application.query.BankingTransferQuery
+import com.moaje.asset.account.application.model.BankingTransferProjectionState
 import com.moaje.asset.account.domain.Account
 import com.moaje.asset.account.domain.AccountSyncStatus
 import com.moaje.asset.account.persistence.AccountRepository
 import com.moaje.asset.common.id.IdGenerator
 import com.moaje.asset.outbox.persistence.TransactionalOutboxRepository
 import com.moaje.asset.transfer.application.service.TransactionCategoryClassifier
-import com.moaje.asset.transfer.application.service.TransferApplicationService
+import com.moaje.asset.transfer.application.service.TransferServiceImpl
 import com.moaje.asset.transfer.domain.BalanceChangeType
 import com.moaje.asset.transfer.domain.TransactionHistory
 import com.moaje.asset.transfer.domain.TransactionStatus
@@ -48,7 +48,7 @@ class AssetProjectionReconciliationServiceJpaTest(
     @Autowired private val outboxRepository: TransactionalOutboxRepository,
     @Autowired transactionManager: PlatformTransactionManager,
 ) {
-    private val gateway = FakeBankingGateway()
+    private val bankingQuery = FakeBankingQuery()
     private val properties = AssetProjectionReconciliationProperties().apply {
         batchSize = 10
         leaseDurationMs = 30_000
@@ -59,11 +59,11 @@ class AssetProjectionReconciliationServiceJpaTest(
     private val meterRegistry = SimpleMeterRegistry()
     private val transactionTemplate = TransactionTemplate(transactionManager)
     private lateinit var service: AssetProjectionReconciliationService
-    private lateinit var transferService: TransferApplicationService
+    private lateinit var transferService: TransferServiceImpl
 
     @BeforeEach
     fun setUp() {
-        transferService = TransferApplicationService(
+        transferService = TransferServiceImpl(
             accountRepository,
             transactionHistoryRepository,
             processedEventRepository,
@@ -76,14 +76,14 @@ class AssetProjectionReconciliationServiceJpaTest(
         service = AssetProjectionReconciliationService(
             accountRepository,
             transactionHistoryRepository,
-            gateway,
-            gateway,
+            bankingQuery,
+            bankingQuery,
             transferService,
             properties,
             AssetProjectionReconciliationMetrics(accountRepository, meterRegistry),
             transactionTemplate,
         )
-        gateway.clear()
+        bankingQuery.clear()
     }
 
     @Nested
@@ -95,21 +95,21 @@ class AssetProjectionReconciliationServiceJpaTest(
             // given: Reversed 이벤트가 먼저 와서 PENDING 이력만 있는 상태다.
             val account = saveSyncRequiredAccount("10000")
             transferService.applyBankingTransferReversed(
-                com.moaje.asset.transfer.application.usecase.ApplyBankingTransferReversedCommand(
+                com.moaje.asset.transfer.application.model.ApplyBankingTransferReversedCommand(
                     eventId = "reverse-first", bankingTransferId = 303L, userId = "user-1", accountId = account.id!!,
                     amount = BigDecimal("1000"), originalExternalTransactionId = "EXT-303",
                     externalReversalTransactionId = "REV-303", reason = null, occurredAt = Instant.now(),
                 ),
             )
-            gateway.respond(state(account.id!!, 303L, BankingProjectionTransferStatus.UNKNOWN))
-            gateway.respondSnapshot(account.id!!, "10000", listOf(
+            bankingQuery.respond(state(account.id!!, 303L, BankingProjectionTransferStatus.UNKNOWN))
+            bankingQuery.respondSnapshot(account.id!!, "10000", listOf(
                 externalTransaction("EXT-303", "TRANSFER_OUT", "1000"),
                 externalTransaction("REV-303", "REVERSAL_IN", "1000"),
             ))
             service.reconcileBatch()
             // when: 스냅샷 이후 원 성공 이벤트가 도착한다.
             transferService.applyBankingTransferCompleted(
-                com.moaje.asset.transfer.application.usecase.ApplyBankingTransferCompletedCommand(
+                com.moaje.asset.transfer.application.model.ApplyBankingTransferCompletedCommand(
                     "complete-late", 303L, "user-1", account.id!!, BigDecimal("1000"), "EXT-303", Instant.now(),
                 ),
             )
@@ -124,11 +124,11 @@ class AssetProjectionReconciliationServiceJpaTest(
         fun snapshotBeforeEventLinksWithoutSecondDebit() {
             // given: 계정계에는 출금이 끝났지만 Kafka 전달이 늦어 정기 조회가 먼저 반영했다.
             val account = saveSyncRequiredAccount("10000")
-            gateway.respondSnapshot(account.id!!, "9000", listOf(externalTransaction("EXT-301", "TRANSFER_OUT", "1000")))
+            bankingQuery.respondSnapshot(account.id!!, "9000", listOf(externalTransaction("EXT-301", "TRANSFER_OUT", "1000")))
             service.reconcileBatch()
             // when: 같은 거래가 새로운 eventId로도 다시 도착한다.
             repeat(2) { index -> transferService.applyBankingTransferCompleted(
-                com.moaje.asset.transfer.application.usecase.ApplyBankingTransferCompletedCommand(
+                com.moaje.asset.transfer.application.model.ApplyBankingTransferCompletedCommand(
                     "late-$index", 301L, "user-1", account.id!!, BigDecimal("1000"), "EXT-301", Instant.now(),
                 ),
             ) }
@@ -146,10 +146,10 @@ class AssetProjectionReconciliationServiceJpaTest(
         fun eventInvalidatesInFlightSnapshot() {
             // given: Worker는 10,000원 스냅샷을 읽었지만 반환 직전에 1,000원 출금 이벤트가 반영된다.
             val account = saveSyncRequiredAccount("10000")
-            gateway.respondSnapshot(account.id!!, "10000", emptyList())
-            gateway.afterSnapshot = {
+            bankingQuery.respondSnapshot(account.id!!, "10000", emptyList())
+            bankingQuery.afterSnapshot = {
                 transferService.applyBankingTransferCompleted(
-                    com.moaje.asset.transfer.application.usecase.ApplyBankingTransferCompletedCommand(
+                    com.moaje.asset.transfer.application.model.ApplyBankingTransferCompletedCommand(
                         "during-query", 302L, "user-1", account.id!!, BigDecimal("1000"), "EXT-302", Instant.now(),
                     ),
                 )
@@ -171,7 +171,7 @@ class AssetProjectionReconciliationServiceJpaTest(
             // given: 어제 발생한 외부 입금과 반전 내역을 오늘 대사로 확인했다.
             val account = saveSyncRequiredAccount("10000")
             val occurred = Instant.parse("2026-01-01T00:00:00Z")
-            gateway.respondSnapshot(account.id!!, "11000", listOf(
+            bankingQuery.respondSnapshot(account.id!!, "11000", listOf(
                 externalTransaction("old-deposit", "DEPOSIT", "1000").copy(completedAt = occurred.plusSeconds(2)),
                 externalTransaction("old-reversal", "REVERSAL_IN", "500"),
             ))
@@ -197,7 +197,7 @@ class AssetProjectionReconciliationServiceJpaTest(
                     lastSyncedAt = LocalDateTime.now().minusHours(7),
                 ),
             )
-            gateway.respondSnapshot(account.id!!, "11000.0000", emptyList())
+            bankingQuery.respondSnapshot(account.id!!, "11000.0000", emptyList())
 
             // when
             val result = service.reconcileBatch()
@@ -213,7 +213,7 @@ class AssetProjectionReconciliationServiceJpaTest(
         fun repairsBalanceDriftAndExternalHistories() {
             // given: Kafka로 알 수 없는 외부 입금이 발생해 Asset 잔액과 이력이 모두 뒤처져 있다.
             val account = saveSyncRequiredAccount("10000.0000")
-            gateway.respondSnapshot(
+            bankingQuery.respondSnapshot(
                 accountId = account.id!!,
                 balance = "12500.0000",
                 transactions = listOf(externalTransaction("EXT-DEPOSIT-1", "DEPOSIT", "2500.0000")),
@@ -239,12 +239,12 @@ class AssetProjectionReconciliationServiceJpaTest(
             // given
             val account = saveSyncRequiredAccount("10000.0000")
             val external = externalTransaction("EXT-WITHDRAW-1", "WITHDRAWAL", "1000.0000")
-            gateway.respondSnapshot(account.id!!, "9000.0000", listOf(external))
+            bankingQuery.respondSnapshot(account.id!!, "9000.0000", listOf(external))
             service.reconcileBatch()
             accountRepository.findById(account.id!!).orElseThrow().apply { markSyncRequired() }
 
             // when: 경계 시각의 레코드를 포함해 반환하는 cursor 정책으로 같은 외부 거래가 다시 도착한다.
-            gateway.respondSnapshot(account.id!!, "9000.0000", listOf(external))
+            bankingQuery.respondSnapshot(account.id!!, "9000.0000", listOf(external))
             service.reconcileBatch()
 
             // then: externalTransactionId Unique 의미 키가 중복 이력과 중복 Outbox 생성을 막는다.
@@ -263,7 +263,7 @@ class AssetProjectionReconciliationServiceJpaTest(
             // given: Timeout 이벤트로 잔액은 아직 차감되지 않았고 UNKNOWN placeholder만 남아 있다.
             val account = saveSyncRequiredAccount("10000.0000")
             saveUnknown(account.id!!, 101L)
-            gateway.respond(state(account.id!!, 101L, BankingProjectionTransferStatus.SUCCEEDED))
+            bankingQuery.respond(state(account.id!!, 101L, BankingProjectionTransferStatus.SUCCEEDED))
 
             // when
             val result = service.reconcileBatch()
@@ -273,7 +273,7 @@ class AssetProjectionReconciliationServiceJpaTest(
             val histories = transactionHistoryRepository.findByAccountId(account.id!!)
             assertThat(result.resolved).isEqualTo(1)
             assertThat(result.repairedEffects).isEqualTo(1)
-            assertThat(gateway.calls).isEqualTo(1)
+            assertThat(bankingQuery.calls).isEqualTo(1)
             assertThat(savedAccount.balance).isEqualByComparingTo("9000.0000")
             assertThat(savedAccount.syncStatus).isEqualTo(AccountSyncStatus.SYNCED)
             assertThat(savedAccount.syncLockedUntil).isNull()
@@ -289,7 +289,7 @@ class AssetProjectionReconciliationServiceJpaTest(
             // given
             val account = saveSyncRequiredAccount("10000.0000")
             saveUnknown(account.id!!, 102L)
-            gateway.respond(state(account.id!!, 102L, BankingProjectionTransferStatus.FAILED))
+            bankingQuery.respond(state(account.id!!, 102L, BankingProjectionTransferStatus.FAILED))
 
             // when
             service.reconcileBatch()
@@ -323,7 +323,7 @@ class AssetProjectionReconciliationServiceJpaTest(
                     reconciliationRequired = true,
                 ),
             )
-            gateway.respond(state(account.id!!, 103L, BankingProjectionTransferStatus.REVERSED))
+            bankingQuery.respond(state(account.id!!, 103L, BankingProjectionTransferStatus.REVERSED))
 
             // when
             service.reconcileBatch()
@@ -349,7 +349,7 @@ class AssetProjectionReconciliationServiceJpaTest(
             // given
             val account = saveSyncRequiredAccount("10000.0000")
             saveUnknown(account.id!!, 201L)
-            gateway.respond(state(account.id!!, 201L, BankingProjectionTransferStatus.UNKNOWN))
+            bankingQuery.respond(state(account.id!!, 201L, BankingProjectionTransferStatus.UNKNOWN))
 
             // when
             val result = service.reconcileBatch()
@@ -370,7 +370,7 @@ class AssetProjectionReconciliationServiceJpaTest(
             // given: Asset placeholder는 1,000원이지만 Banking Journal 응답은 2,000원이다.
             val account = saveSyncRequiredAccount("10000.0000")
             saveUnknown(account.id!!, 204L)
-            gateway.respond(
+            bankingQuery.respond(
                 state(account.id!!, 204L, BankingProjectionTransferStatus.SUCCEEDED)
                     .copy(amount = BigDecimal("2000.0000")),
             )
@@ -406,7 +406,7 @@ class AssetProjectionReconciliationServiceJpaTest(
 
             // then
             assertThat(result.scanned).isZero()
-            assertThat(gateway.calls).isZero()
+            assertThat(bankingQuery.calls).isZero()
         }
 
         @Test
@@ -420,7 +420,7 @@ class AssetProjectionReconciliationServiceJpaTest(
             }
             accountRepository.saveAndFlush(account)
             saveUnknown(account.id!!, 205L)
-            gateway.respond(state(account.id!!, 205L, BankingProjectionTransferStatus.FAILED))
+            bankingQuery.respond(state(account.id!!, 205L, BankingProjectionTransferStatus.FAILED))
 
             // when
             val result = service.reconcileBatch()
@@ -428,7 +428,7 @@ class AssetProjectionReconciliationServiceJpaTest(
             // then
             val saved = accountRepository.findById(account.id!!).orElseThrow()
             assertThat(result.resolved).isEqualTo(1)
-            assertThat(gateway.calls).isEqualTo(1)
+            assertThat(bankingQuery.calls).isEqualTo(1)
             assertThat(saved.syncStatus).isEqualTo(AccountSyncStatus.SYNCED)
             assertThat(saved.syncLockOwner).isNull()
         }
@@ -460,7 +460,7 @@ class AssetProjectionReconciliationServiceJpaTest(
             properties.maxAttempts = 1
             val account = saveSyncRequiredAccount("10000.0000")
             saveUnknown(account.id!!, 203L)
-            gateway.failWith(IllegalStateException("Banking unavailable"))
+            bankingQuery.failWith(IllegalStateException("Banking unavailable"))
 
             // when
             service.reconcileBatch()
@@ -598,7 +598,7 @@ class AssetProjectionReconciliationServiceJpaTest(
         occurredAt = Instant.parse("2026-01-01T00:00:00Z"),
     )
 
-    private class FakeBankingGateway : BankingTransferProjectionGateway, BankingAccountProjectionGateway {
+    private class FakeBankingQuery : BankingTransferQuery, BankingAccountSnapshotQuery {
         var afterSnapshot: (() -> Unit)? = null
         private var response: List<BankingTransferProjectionState> = emptyList()
         private var snapshot: BankingAccountProjectionSnapshot? = null

@@ -10,8 +10,8 @@ import com.moaje.asset.account.persistence.AccountRepository
 import com.moaje.asset.common.id.IdGenerator
 import com.moaje.asset.outbox.domain.TransactionalOutbox
 import com.moaje.asset.outbox.persistence.TransactionalOutboxRepository
-import com.moaje.asset.transfer.application.usecase.ApplyBankingTransferCompletedCommand
-import com.moaje.asset.transfer.application.usecase.ApplyBankingTransferFailedCommand
+import com.moaje.asset.transfer.application.model.ApplyBankingTransferCompletedCommand
+import com.moaje.asset.transfer.application.model.ApplyBankingTransferFailedCommand
 import com.moaje.asset.transfer.domain.BalanceChangeType
 import com.moaje.asset.transfer.domain.ProcessedEvent
 import com.moaje.asset.transfer.domain.TransactionHistory
@@ -25,12 +25,12 @@ import org.mockito.Mockito
 import java.math.BigDecimal
 import java.time.Instant
 
-class TransferApplicationServiceCharacterizationTest {
+class TransferServiceImplCharacterizationTest {
     private val accountRepository = Mockito.mock(AccountRepository::class.java)
     private val transactionHistoryRepository = Mockito.mock(TransactionHistoryRepository::class.java)
     private val processedEventRepository = Mockito.mock(ProcessedEventRepository::class.java)
     private val transactionalOutboxRepository = Mockito.mock(TransactionalOutboxRepository::class.java)
-    private val service = TransferApplicationService(
+    private val service = TransferServiceImpl(
         accountRepository = accountRepository,
         transactionHistoryRepository = transactionHistoryRepository,
         processedEventRepository = processedEventRepository,

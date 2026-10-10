@@ -1,12 +1,12 @@
 package com.moaje.asset.account.web
 
-import com.moaje.asset.account.application.usecase.AccountDetailCommand
-import com.moaje.asset.account.application.usecase.AccountDetailResult
-import com.moaje.asset.account.application.usecase.AccountTransactionCommand
-import com.moaje.asset.account.application.usecase.AccountTransactionItem
-import com.moaje.asset.account.application.usecase.AccountTransactionListCommand
-import com.moaje.asset.account.application.usecase.AccountTransactionScrollResult
-import com.moaje.asset.account.application.usecase.GetAccountDetailUseCase
+import com.moaje.asset.account.application.model.AccountDetailCommand
+import com.moaje.asset.account.application.model.AccountDetailResult
+import com.moaje.asset.account.application.model.AccountTransactionCommand
+import com.moaje.asset.account.application.model.AccountTransactionItem
+import com.moaje.asset.account.application.model.AccountTransactionListCommand
+import com.moaje.asset.account.application.model.AccountTransactionScrollResult
+import com.moaje.asset.account.application.service.AccountDetailService
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -18,14 +18,14 @@ import java.security.Principal
 @RestController
 @RequestMapping("/api/v1/assets/accounts")
 class AccountController(
-    private val getAccountDetailUseCase: GetAccountDetailUseCase,
+    private val accountDetailService: AccountDetailService,
 ) {
     @GetMapping("/{accountId}/detail")
     fun getDetail(
         @PathVariable accountId: Long,
         principal: Principal,
     ): AccountDetailResult {
-        return getAccountDetailUseCase.getDetail(
+        return accountDetailService.getDetail(
             AccountDetailCommand(
                 userId = principal.name,
                 accountId = accountId,
@@ -40,7 +40,7 @@ class AccountController(
         @PathVariable transactionId: Long,
         principal: Principal,
     ): AccountTransactionItem {
-        return getAccountDetailUseCase.getTranDetail(
+        return accountDetailService.getTranDetail(
             AccountTransactionCommand(
                 userId = principal.name,
                 accountId = accountId,
@@ -56,7 +56,7 @@ class AccountController(
         @RequestParam(required = false) lastTransactionId: Long?,
         principal: Principal,
     ): AccountTransactionScrollResult {
-        return getAccountDetailUseCase.getTranList(
+        return accountDetailService.getTranList(
             AccountTransactionListCommand(
                 userId = principal.name,
                 accountId = accountId,
@@ -71,7 +71,7 @@ class AccountController(
         @PathVariable accountId: Long,
         principal: Principal,
     ): AccountDetailResult {
-        return getAccountDetailUseCase.getRefreshAccountDetail(
+        return accountDetailService.getRefreshAccountDetail(
             AccountDetailCommand(
                 userId = principal.name,
                 accountId = accountId,

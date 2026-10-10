@@ -1,9 +1,9 @@
 package com.moaje.asset.transfer.messaging.consumer
 
 import com.moaje.asset.transfer.application.service.BankingTransferEventHandler
-import com.moaje.asset.transfer.application.usecase.ApplyBankingTransferCompletedCommand
-import com.moaje.asset.transfer.application.usecase.ApplyBankingTransferFailedCommand
-import com.moaje.asset.transfer.application.usecase.ApplyBankingTransferReversedCommand
+import com.moaje.asset.transfer.application.model.ApplyBankingTransferCompletedCommand
+import com.moaje.asset.transfer.application.model.ApplyBankingTransferFailedCommand
+import com.moaje.asset.transfer.application.model.ApplyBankingTransferReversedCommand
 import com.moaje.events.banking.BankingTransferCompletedEvent
 import com.moaje.events.banking.BankingTransferFailedEvent
 import com.moaje.events.banking.BankingTransferReversedEvent

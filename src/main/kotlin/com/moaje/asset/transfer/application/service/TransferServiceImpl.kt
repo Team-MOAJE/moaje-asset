@@ -2,19 +2,18 @@ package com.moaje.asset.transfer.application.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.moaje.asset.account.domain.Account
-import com.moaje.asset.account.application.gateway.BankingProjectionTransferStatus
-import com.moaje.asset.account.application.gateway.BankingAccountProjectionSnapshot
-import com.moaje.asset.account.application.gateway.BankingExternalProjectionTransaction
-import com.moaje.asset.account.application.gateway.BankingTransferProjectionState
-import com.moaje.asset.account.application.reconciliation.ProjectionRepairResult
+import com.moaje.asset.account.application.model.BankingProjectionTransferStatus
+import com.moaje.asset.account.application.model.BankingAccountProjectionSnapshot
+import com.moaje.asset.account.application.model.BankingExternalProjectionTransaction
+import com.moaje.asset.account.application.model.BankingTransferProjectionState
+import com.moaje.asset.account.application.model.ProjectionRepairResult
 import com.moaje.asset.account.persistence.AccountRepository
 import com.moaje.asset.common.id.IdGenerator
 import com.moaje.asset.outbox.domain.TransactionalOutbox
 import com.moaje.asset.outbox.persistence.TransactionalOutboxRepository
-import com.moaje.asset.transfer.application.usecase.ApplyBankingTransferCompletedCommand
-import com.moaje.asset.transfer.application.usecase.ApplyBankingTransferFailedCommand
-import com.moaje.asset.transfer.application.usecase.ApplyBankingTransferReversedCommand
-import com.moaje.asset.transfer.application.usecase.TransferUseCase
+import com.moaje.asset.transfer.application.model.ApplyBankingTransferCompletedCommand
+import com.moaje.asset.transfer.application.model.ApplyBankingTransferFailedCommand
+import com.moaje.asset.transfer.application.model.ApplyBankingTransferReversedCommand
 import com.moaje.asset.transfer.domain.BalanceChangeType
 import com.moaje.asset.transfer.domain.ProcessedEvent
 import com.moaje.asset.transfer.domain.TransactionHistory
@@ -33,7 +32,7 @@ import java.time.ZoneOffset
 import java.util.UUID
 
 @Service
-class TransferApplicationService(
+class TransferServiceImpl(
     private val accountRepository: AccountRepository,
     private val transactionHistoryRepository: TransactionHistoryRepository,
     private val processedEventRepository: ProcessedEventRepository,
@@ -41,7 +40,7 @@ class TransferApplicationService(
     private val categoryClassifier: TransactionCategoryClassifier,
     private val idGenerator: IdGenerator,
     private val objectMapper: ObjectMapper,
-) : TransferUseCase {
+) : TransferService {
     /**
      * Banking이 확정한 송금 성공 이벤트를 Asset 조회 모델에 반영합니다.
      *
@@ -50,13 +49,15 @@ class TransferApplicationService(
      */
     @Transactional
     override fun applyBankingTransferCompleted(command: ApplyBankingTransferCompletedCommand) {
-        if (processedEventRepository.existsById(command.eventId)) {
+        if (processedEventRepository.existsById(command.eventId)) { // kafka에서 메세지를 중복발행 할 수 있기에 이미 처리되었는지 check한다.
             return
         }
 
+        // 비관적 락을 통해 Lock을 걸어줍니다. 다만 쓰기까지 Lock을 걸어서 동시에 하나의 장부를 수정하는것을 막아놓습니다.
         val account = accountRepository.findByIdForUpdate(command.accountId)
             ?: throw IllegalArgumentException("계좌를 찾을 수 없습니다.")
 
+        // Lock을 걸고 들어오기 까지 기다리는 동안 다른 인스턴스나 스레드가 이미 처리했을 수도 있으니 한번더 확인한다.
         if (processedEventRepository.existsById(command.eventId)) {
             return
         }
@@ -65,7 +66,8 @@ class TransferApplicationService(
 
         val balanceChangeType = BalanceChangeType.TRANSFER_OUT
         if (linkImportedEffect(command.externalTransactionId, command.bankingTransferId, account,
-                command.amount, balanceChangeType)) {
+                command.amount, balanceChangeType)) { // 스냅샷을 통해 이미 장부에 기록된 건이라면(externalTransactionId를 통한 조회)
+            // Event 처리완료 Table에 기록한다.
             saveProcessedEvent(command.eventId, BANKING_TRANSFER_COMPLETED, command.bankingTransferId, command.accountId)
             completePendingReversalIfPresent(command.bankingTransferId, account)
             return
@@ -675,6 +677,9 @@ class TransferApplicationService(
         saveTransactionSucceededOutbox(reversal, account)
     }
 
+    /**
+     * externalId: 외부거래ID , transferId: Banking 서비스에서 생성한 transferId
+     */
     private fun linkImportedEffect(
         externalId: String?, transferId: Long, account: Account,
         amount: BigDecimal, effect: BalanceChangeType,
@@ -685,7 +690,7 @@ class TransferApplicationService(
             "같은 외부 거래의 계좌 또는 금액이 다릅니다."
         }
         if (existing.status != TransactionStatus.SUCCESS) return false
-        existing.linkBankingEffect(transferId, effect)
+        existing.linkBankingEffect(transferId, effect) // 스냅샷으로 가져온 데이터에 banking_transferId 와 balanceChangeType 을 넣어서 맞춰준다.
         return true
     }
 

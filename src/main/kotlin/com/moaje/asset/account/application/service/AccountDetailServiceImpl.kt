@@ -1,18 +1,21 @@
 ﻿package com.moaje.asset.account.application.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.moaje.asset.account.application.gateway.BankingAccountProjectionGateway
-import com.moaje.asset.account.application.usecase.AccountDetailCommand
-import com.moaje.asset.account.application.usecase.AccountDetailResult
-import com.moaje.asset.account.application.usecase.AccountTransactionCommand
-import com.moaje.asset.account.application.usecase.AccountTransactionItem
-import com.moaje.asset.account.application.usecase.AccountTransactionListCommand
-import com.moaje.asset.account.application.usecase.AccountTransactionScrollResult
-import com.moaje.asset.account.application.usecase.GetAccountDetailUseCase
+import com.moaje.asset.account.application.query.BankingAccountSnapshotQuery
+import com.moaje.asset.account.application.model.AccountDetailCommand
+import com.moaje.asset.account.application.model.AccountDetailResult
+import com.moaje.asset.account.application.model.AccountTransactionCommand
+import com.moaje.asset.account.application.model.AccountTransactionItem
+import com.moaje.asset.account.application.model.AccountTransactionListCommand
+import com.moaje.asset.account.application.model.AccountTransactionScrollResult
 import com.moaje.asset.account.domain.Account
 import com.moaje.asset.account.domain.AccountSyncStatus
+import com.moaje.asset.account.exception.AccountAuthFailedException
+import com.moaje.asset.account.exception.AccountRefreshFailedException
+import com.moaje.asset.account.exception.InvalidAccountException
+import com.moaje.asset.account.exception.NotFoundAccountTransferHistory
 import com.moaje.asset.account.persistence.AccountRepository
-import com.moaje.asset.transfer.application.service.TransferApplicationService
+import com.moaje.asset.transfer.application.service.TransferServiceImpl
 import com.moaje.asset.transfer.domain.TransactionHistory
 import com.moaje.asset.transfer.persistence.TransactionHistoryRepository
 import org.springframework.data.domain.PageRequest
@@ -25,15 +28,15 @@ import java.time.ZoneOffset
 import java.util.concurrent.TimeUnit
 
 @Service
-class AccountDetailQueryService(
+class AccountDetailServiceImpl(
     private val accountRepository: AccountRepository,
     private val transactionHistoryRepository: TransactionHistoryRepository,
     private val redisTemplate: StringRedisTemplate,
     private val objectMapper: ObjectMapper,
-    private val bankingGateway: BankingAccountProjectionGateway,
-    private val transferApplicationService: TransferApplicationService,
+    private val bankingAccountSnapshotQuery: BankingAccountSnapshotQuery,
+    private val transferServiceImpl: TransferServiceImpl,
     private val transactionTemplate: TransactionTemplate,
-) : GetAccountDetailUseCase {
+) : AccountDetailService {
 
     /**
      * 계좌정보를 조회한다.
@@ -41,9 +44,9 @@ class AccountDetailQueryService(
     @Transactional(readOnly = true)
     override fun getDetail(command: AccountDetailCommand): AccountDetailResult {
         val account = accountRepository.findById(command.accountId).orElse(null)
-            ?: throw IllegalArgumentException("계좌를 찾을 수 없습니다.")
+            ?: throw InvalidAccountException("계좌를 찾을 수 없습니다.")
 
-        require(account.userId == command.userId) { "사용자의 계좌가 아닙니다." }
+        require(account.userId == command.userId) { throw AccountAuthFailedException("사용자의 계좌가 아니거나 유효하지 않습니다.") }
 
         val cached = readCachedDetail(command.accountId) // redis에서 계좌데이터를 가져온다.
         if (account.syncStatus == AccountSyncStatus.RECONCILING && cached != null) { // 만약 계좌상태가 대사중이거나 캐시가 널이 아니라면, 계좌업데이트 중으로 반환
@@ -70,11 +73,11 @@ class AccountDetailQueryService(
 
     override fun getRefreshAccountDetail(command: AccountDetailCommand): AccountDetailResult {
         val account = accountRepository.findById(command.accountId).orElseThrow {
-            IllegalArgumentException("계좌를 찾을 수 없습니다.")
+            InvalidAccountException("계좌를 찾을 수 없습니다.")
         }
 
-        require(account.userId == command.userId) { "사용자의 계좌가 아닙니다." }
-        val accountId = account.id ?: throw IllegalStateException("계좌 ID가 없습니다.")
+        require(account.userId == command.userId) { throw AccountAuthFailedException("사용자의 계좌가 아니거나 유효하지 않습니다.") }
+        val accountId = account.id ?: throw InvalidAccountException("계좌 ID가 없습니다.")
         val requestedCursor = account.snapshotCursorAt?.toInstant(ZoneOffset.UTC) ?: EPOCH
         val beforeLastEventAppliedAt = account.lastEventAppliedAt // Asset DB 조회 당시 계좌의 이벤트 반영시각
 
@@ -82,18 +85,18 @@ class AccountDetailQueryService(
          * Redis와 Asset DB는 조회용 복제본이므로 Refresh의 기준값으로 사용하지 않는다.
          * Banking을 거쳐 Mock Banking의 현재 잔액·상태·cursor 이후 거래내역을 DB 트랜잭션 밖에서 조회한다.
          */
-        val accountSnapshot = bankingGateway.getAccountSnapshot(
+        val accountSnapshot = bankingAccountSnapshotQuery.getAccountSnapshot(
             accountId,
             requestedCursor,
         )
-        require(accountSnapshot.accountId == accountId) { "요청한 계좌와 Banking 응답 계좌가 다릅니다." }
-        require(command.userId == accountSnapshot.principalId) { "사용자의 계좌가 아닙니다." }
+        require(accountSnapshot.accountId == accountId) { throw InvalidAccountException("요청한 계좌와 Banking 응답 계좌가 다릅니다.") }
+        require(command.userId == accountSnapshot.principalId) { throw AccountAuthFailedException("사용자의 계좌가 아닙니다.") }
 
         /*
          * 원격 조회 중 Kafka 이벤트가 먼저 반영됐다면 방금 받은 Snapshot은 이미 오래된 값일 수 있어서
          * 새 트랜잭션에서 계좌를 다시 잠그고 이벤트 시각과 cursor를 재검증한 뒤 한 번에 반영
          */
-        transferApplicationService.refreshProjectionFromSnapshot(
+        transferServiceImpl.refreshProjectionFromSnapshot(
             accountId = accountId,
             principalId = command.userId,
             observedLastEventAppliedAt = beforeLastEventAppliedAt,
@@ -102,10 +105,10 @@ class AccountDetailQueryService(
 
         val savedAccountInfo = transactionTemplate.execute {
             val refreshed = accountRepository.findById(accountId).orElseThrow {
-                IllegalArgumentException("갱신된 계좌를 찾을 수 없습니다.")
+                InvalidAccountException("갱신된 계좌를 찾을 수 없습니다.")
             }
             buildDetail(refreshed)
-        } ?: throw IllegalStateException("계좌 Refresh 결과를 만들 수 없습니다.")
+        } ?: throw AccountRefreshFailedException("계좌 Refresh 결과를 만들 수 없습니다.")
 
         // DB 반영이 끝난뒤 Redis cache 교체
         writeCacheDetail(savedAccountInfo)
@@ -116,16 +119,16 @@ class AccountDetailQueryService(
     @Transactional(readOnly = true)
     override fun getTranDetail(command: AccountTransactionCommand): AccountTransactionItem {
         val tranItem = transactionHistoryRepository.findOwnedTransaction(command.transactionId,command.accountId,command.userId)
-        return tranItem?.toItem() ?: throw IllegalArgumentException("거래를 찾을 수 없습니다.")
+        return tranItem?.toItem() ?: throw NotFoundAccountTransferHistory("거래를 찾을 수 없습니다.")
     }
 
     @Transactional(readOnly = true)
     override fun getTranList(command: AccountTransactionListCommand): AccountTransactionScrollResult {
         // 소유권 검증
         val account = accountRepository.findById(command.accountId).orElseThrow {
-            IllegalArgumentException("잘못된 계좌입니다.")
+            AccountAuthFailedException("잘못된 계좌입니다.")
         }
-        require(account.userId == command.userId) { "사용자의 계좌가 아닙니다." }
+        require(account.userId == command.userId) { throw AccountAuthFailedException("사용자의 계좌가 아닙니다.") }
 
         return loadTransactionPage(command.accountId, command.lastTransactionId)
     }
@@ -133,7 +136,7 @@ class AccountDetailQueryService(
 
     // 계좌 내 거래내역 정보 최신화
     private fun buildDetail(account: Account): AccountDetailResult {
-        val accountId = account.id ?: throw IllegalStateException("계좌 ID가 없습니다.")
+        val accountId = account.id ?: throw InvalidAccountException("계좌 ID가 없습니다.")
         val transactionPage = loadTransactionPage(accountId, null)
 
         return AccountDetailResult(
@@ -177,7 +180,7 @@ class AccountDetailQueryService(
 
     private fun TransactionHistory.toItem(): AccountTransactionItem {
         return AccountTransactionItem(
-            transactionId = id ?: throw IllegalStateException("거래 ID가 없습니다."),
+            transactionId = id ?: throw InvalidAccountException("거래 ID가 없습니다."),
             publicTransactionId = publicTransferId,
             type = type,
             amount = amount,

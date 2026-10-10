@@ -17,12 +17,12 @@ import org.junit.jupiter.api.Test
 import java.time.Instant
 
 @DisplayName("Asset에서 Banking으로 연결하는 mTLS Client")
-class BankingTransferProjectionClientMutualTlsTest {
+class BankingGrpcClientMutualTlsTest {
     @Test
     @DisplayName("mTLS가 활성화됐는데 인증서 경로가 없으면 plaintext Banking 호출을 만들지 않는다")
     fun failsClosedWhenTlsFilesAreMissing() {
         // given: 운영 기본값인 TLS enabled 상태지만 Asset과 Banking 인증서 경로가 비어 있다.
-        val client = BankingTransferProjectionClient(BankingGrpcClientProperties().apply { grpcPort = 1 })
+        val client = BankingGrpcClient(BankingGrpcClientProperties().apply { grpcPort = 1 })
 
         try {
             // when & then: 네트워크 연결 전에 설정 오류로 실패해 비인증 채널로 우회하지 않는다.
@@ -83,7 +83,7 @@ class BankingTransferProjectionClientMutualTlsTest {
             tls.trustCertificateCollectionPath = bankingCertificate.certificate().absolutePath
             tls.overrideAuthority = "banking.test"
         }
-        val client = BankingTransferProjectionClient(properties)
+        val client = BankingGrpcClient(properties)
 
         try {
             // when

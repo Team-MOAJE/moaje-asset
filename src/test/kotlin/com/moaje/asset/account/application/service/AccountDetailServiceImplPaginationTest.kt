@@ -1,11 +1,12 @@
 package com.moaje.asset.account.application.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.moaje.asset.account.application.gateway.BankingAccountProjectionGateway
-import com.moaje.asset.account.application.usecase.AccountTransactionListCommand
+import com.moaje.asset.account.application.query.BankingAccountSnapshotQuery
+import com.moaje.asset.account.application.model.AccountTransactionListCommand
 import com.moaje.asset.account.domain.Account
+import com.moaje.asset.account.exception.AccountAuthFailedException
 import com.moaje.asset.account.persistence.AccountRepository
-import com.moaje.asset.transfer.application.service.TransferApplicationService
+import com.moaje.asset.transfer.application.service.TransferServiceImpl
 import com.moaje.asset.transfer.domain.TransactionHistory
 import com.moaje.asset.transfer.domain.TransactionStatus
 import com.moaje.asset.transfer.domain.TransactionType
@@ -22,16 +23,16 @@ import org.springframework.transaction.support.TransactionTemplate
 import java.math.BigDecimal
 import java.util.Optional
 
-class AccountDetailQueryServicePaginationTest {
+class AccountDetailServiceImplPaginationTest {
     private val accountRepository = Mockito.mock(AccountRepository::class.java)
     private val transactionHistoryRepository = Mockito.mock(TransactionHistoryRepository::class.java)
-    private val service = AccountDetailQueryService(
+    private val service = AccountDetailServiceImpl(
         accountRepository = accountRepository,
         transactionHistoryRepository = transactionHistoryRepository,
         redisTemplate = Mockito.mock(StringRedisTemplate::class.java),
         objectMapper = ObjectMapper(),
-        bankingGateway = Mockito.mock(BankingAccountProjectionGateway::class.java),
-        transferApplicationService = Mockito.mock(TransferApplicationService::class.java),
+        bankingAccountSnapshotQuery = Mockito.mock(BankingAccountSnapshotQuery::class.java),
+        transferServiceImpl = Mockito.mock(TransferServiceImpl::class.java),
         transactionTemplate = Mockito.mock(TransactionTemplate::class.java),
     )
 
@@ -99,7 +100,7 @@ class AccountDetailQueryServicePaginationTest {
 
             // when / then: 커서 조회 전에 계좌 소유권을 먼저 확인한다.
             assertThatThrownBy { service.getTranList(command(lastTransactionId = null)) }
-                .isInstanceOf(IllegalArgumentException::class.java)
+                .isInstanceOf(AccountAuthFailedException::class.java)
                 .hasMessage("사용자의 계좌가 아닙니다.")
             Mockito.verifyNoInteractions(transactionHistoryRepository)
         }

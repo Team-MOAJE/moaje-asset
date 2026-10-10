@@ -1,4 +1,4 @@
-﻿package com.moaje.asset.account.application.usecase
+﻿package com.moaje.asset.account.application.model
 
 import com.moaje.asset.account.domain.AccountSyncStatus
 import com.moaje.asset.transfer.domain.TransactionCategory
@@ -8,7 +8,7 @@ import java.math.BigDecimal
 import java.time.LocalDateTime
 
 /**
- * 외부 입력 어댑터에서 Asset 애플리케이션 기능을 호출할 때 사용하는 데이터입니다.
+ * Controller가 계좌 조회를 요청할 때 전달하는 값과 Service가 돌려주는 결과입니다.
  */
 
 data class AccountDetailCommand(

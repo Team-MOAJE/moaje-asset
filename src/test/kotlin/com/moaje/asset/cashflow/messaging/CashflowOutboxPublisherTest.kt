@@ -1,10 +1,10 @@
 package com.moaje.asset.cashflow.messaging
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.moaje.asset.cashflow.application.service.CategoryCashflowOutboxItem
-import com.moaje.asset.cashflow.application.service.CategoryCashflowOutboxPayload
-import com.moaje.asset.cashflow.application.service.MonthlyCashflowAggregationService
-import com.moaje.asset.cashflow.application.service.MonthlyCashflowOutboxPayload
+import com.moaje.asset.cashflow.application.model.CategoryCashflowOutboxItem
+import com.moaje.asset.cashflow.application.model.CategoryCashflowOutboxPayload
+import com.moaje.asset.cashflow.application.service.MonthlyCashflowServiceImpl
+import com.moaje.asset.cashflow.application.model.MonthlyCashflowOutboxPayload
 import com.moaje.asset.outbox.domain.TransactionalOutbox
 import com.moaje.asset.outbox.persistence.TransactionalOutboxRepository
 import com.moaje.asset.transfer.messaging.publisher.AssetKafkaTopicsProperties
@@ -36,7 +36,7 @@ class CashflowOutboxPublisherTest {
         val kafka = mock(KafkaTemplate::class.java) as KafkaTemplate<String, ByteArray>
         val now = LocalDateTime.of(2026, 9, 1, 0, 10)
         val monthly = TransactionalOutbox(
-            aggregateType = MonthlyCashflowAggregationService.MONTHLY_CASHFLOW_AGGREGATED,
+            aggregateType = MonthlyCashflowServiceImpl.MONTHLY_CASHFLOW_AGGREGATED,
             aggregateId = 1L,
             payload = mapper.writeValueAsString(
                 MonthlyCashflowOutboxPayload("monthly-event", "1001", "2026-08", 1, BigDecimal("100"),
@@ -44,7 +44,7 @@ class CashflowOutboxPublisherTest {
             ),
         )
         val category = TransactionalOutbox(
-            aggregateType = MonthlyCashflowAggregationService.CATEGORY_CASHFLOW_AGGREGATED,
+            aggregateType = MonthlyCashflowServiceImpl.CATEGORY_CASHFLOW_AGGREGATED,
             aggregateId = 1L,
             payload = mapper.writeValueAsString(
                 CategoryCashflowOutboxPayload("category-event", "1001", "2026-08", 1,
@@ -52,9 +52,9 @@ class CashflowOutboxPublisherTest {
             ),
         )
         `when`(repository.findTop100ByAggregateTypeAndPublishedFalseOrderByCreatedAtAsc(
-            MonthlyCashflowAggregationService.MONTHLY_CASHFLOW_AGGREGATED)).thenReturn(listOf(monthly))
+            MonthlyCashflowServiceImpl.MONTHLY_CASHFLOW_AGGREGATED)).thenReturn(listOf(monthly))
         `when`(repository.findTop100ByAggregateTypeAndPublishedFalseOrderByCreatedAtAsc(
-            MonthlyCashflowAggregationService.CATEGORY_CASHFLOW_AGGREGATED)).thenReturn(listOf(category))
+            MonthlyCashflowServiceImpl.CATEGORY_CASHFLOW_AGGREGATED)).thenReturn(listOf(category))
         @Suppress("UNCHECKED_CAST")
         `when`(kafka.send(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
             org.mockito.ArgumentMatchers.any(ByteArray::class.java)))

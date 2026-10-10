@@ -1,4 +1,4 @@
-package com.moaje.asset.account.application.gateway
+package com.moaje.asset.account.application.model
 
 import java.math.BigDecimal
 import java.time.Instant
@@ -26,10 +26,6 @@ data class BankingTransferProjectionState(
     val reversalReason: String?,
 )
 
-interface BankingTransferProjectionGateway {
-    fun getTransferStates(accountId: Long, transferIds: Collection<Long>): List<BankingTransferProjectionState>
-}
-
 data class BankingAccountProjectionSnapshot(
     val accountId: Long,
     val principalId: String,
@@ -49,7 +45,3 @@ data class BankingExternalProjectionTransaction(
     val completedAt: Instant? = null,
     val merchantName: String? = null,
 )
-
-interface BankingAccountProjectionGateway {
-    fun getAccountSnapshot(accountId: Long, cursor: Instant): BankingAccountProjectionSnapshot
-}

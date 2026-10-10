@@ -1,4 +1,4 @@
-package com.moaje.asset.cashflow.application.usecase
+package com.moaje.asset.cashflow.application.model
 
 import com.moaje.asset.transfer.domain.TransactionCategory
 import java.math.BigDecimal
@@ -27,9 +27,3 @@ data class CategoryCashflowResult(
     val categories: List<CategoryCashflowItem>,
     val calculatedAt: LocalDateTime,
 )
-
-interface MonthlyCashflowUseCase {
-    fun getMonthly(userId: String, yearMonth: YearMonth): MonthlyCashflowResult
-    fun getCategories(userId: String, yearMonth: YearMonth): CategoryCashflowResult
-    fun aggregate(userId: String, yearMonth: YearMonth): MonthlyCashflowResult
-}

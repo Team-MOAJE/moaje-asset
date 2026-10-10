@@ -25,18 +25,18 @@ import java.time.YearMonth
 
 @DataJpaTest
 @DisplayName("월별 Cashflow 집계")
-class MonthlyCashflowAggregationServiceJpaTest(
+class MonthlyCashflowServiceImplJpaTest(
     @Autowired private val accountRepository: AccountRepository,
     @Autowired private val transactionRepository: TransactionHistoryRepository,
     @Autowired private val aggregateRepository: MonthlyCashflowAggregateRepository,
     @Autowired private val categoryRepository: MonthlyCategoryCashflowRepository,
     @Autowired private val outboxRepository: TransactionalOutboxRepository,
 ) {
-    private lateinit var service: MonthlyCashflowAggregationService
+    private lateinit var service: MonthlyCashflowServiceImpl
 
     @BeforeEach
     fun setUp() {
-        service = MonthlyCashflowAggregationService(
+        service = MonthlyCashflowServiceImpl(
             transactionRepository,
             aggregateRepository,
             categoryRepository,

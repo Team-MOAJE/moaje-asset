@@ -1,4 +1,4 @@
-package com.moaje.asset.account.application.reconciliation
+package com.moaje.asset.account.application.model
 
 data class AssetProjectionReconciliationResult(
     val scanned: Int,
