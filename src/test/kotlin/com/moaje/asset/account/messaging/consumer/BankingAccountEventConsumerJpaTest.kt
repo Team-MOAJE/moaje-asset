@@ -27,6 +27,7 @@ class BankingAccountEventConsumerJpaTest(
             .setAccountId(7001L)
             .setUserId("user-1")
             .setBankCode("088")
+            .setBankName("테스트 은행")
             .setProductName("모아제 통장")
             .setInitialBalance(10_000L)
             .setCreatedAt("2026-01-01T00:00:00Z")
@@ -42,8 +43,25 @@ class BankingAccountEventConsumerJpaTest(
         val account = accountRepository.findById(7001L).orElseThrow()
         assertThat(accountRepository.count()).isEqualTo(1)
         assertThat(account.userId).isEqualTo("user-1")
+        assertThat(account.bankCode).isEqualTo("088")
+        assertThat(account.bankName).isEqualTo("테스트 은행")
         assertThat(account.balance).isEqualByComparingTo("10000")
         assertThat(account.syncStatus).isEqualTo(AccountSyncStatus.SYNC_REQUIRED)
         assertThat(processedEventRepository.count()).isEqualTo(1)
+    }
+
+    @Test
+    @DisplayName("은행명이 없는 기존 이벤트도 소비하고 이름을 추측하지 않는다")
+    fun acceptsLegacyEventWithoutBankName() {
+        // given: 구버전 생산자는 새 bank_name 필드를 전송하지 않는다.
+        val payload = AccountCreatedEvent.newBuilder()
+            .setEventId("legacy-bank-event").setAccountId(7002L).setUserId("user-2")
+            .setBankCode("004").build().toByteArray()
+        // when
+        consumer.consumeAccountCreated(payload)
+        // then
+        val account = accountRepository.findById(7002L).orElseThrow()
+        assertThat(account.bankCode).isEqualTo("004")
+        assertThat(account.bankName).isNull()
     }
 }

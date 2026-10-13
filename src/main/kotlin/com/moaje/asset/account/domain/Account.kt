@@ -30,6 +30,13 @@ class Account(
     @Column(name = "user_id", nullable = false, length = 100)
     var userId: String,
 
+    // 이전 이벤트에는 은행 정보가 없을 수 있으므로, 없는 값은 추측하지 않는다.
+    @Column(name = "bank_code", length = 20)
+    var bankCode: String? = null,
+
+    @Column(name = "bank_name", length = 100)
+    var bankName: String? = null,
+
     @Column(name = "balance", nullable = false, precision = 18, scale = 4)
     var balance: BigDecimal = BigDecimal.ZERO,
 

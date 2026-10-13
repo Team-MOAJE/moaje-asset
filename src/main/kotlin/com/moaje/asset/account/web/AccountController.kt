@@ -1,6 +1,7 @@
 package com.moaje.asset.account.web
 
 import com.moaje.asset.account.application.model.AccountDetailCommand
+import com.moaje.asset.account.application.model.AccountListItem
 import com.moaje.asset.account.application.model.AccountDetailResult
 import com.moaje.asset.account.application.model.AccountTransactionCommand
 import com.moaje.asset.account.application.model.AccountTransactionItem
@@ -20,6 +21,10 @@ import java.security.Principal
 class AccountController(
     private val accountDetailService: AccountDetailService,
 ) {
+    @GetMapping
+    fun getAccounts(principal: Principal): List<AccountListItem> =
+        accountDetailService.getAccounts(principal.name)
+
     @GetMapping("/{accountId}/detail")
     fun getDetail(
         @PathVariable accountId: Long,

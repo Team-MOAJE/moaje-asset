@@ -394,6 +394,9 @@ class TransferServiceImpl(
         }
 
         account.replaceProjection(snapshot.balance, snapshot.accountStatus)
+        // 구버전 응답의 빈 값으로 기존 은행 정보를 지우지 않는다.
+        snapshot.bankCode?.takeIf(String::isNotBlank)?.let { account.bankCode = it }
+        snapshot.bankName?.takeIf(String::isNotBlank)?.let { account.bankName = it }
         snapshot.transactions.forEach { importSnapshotTransaction(account, it, snapshot.asOf) }
     }
 
