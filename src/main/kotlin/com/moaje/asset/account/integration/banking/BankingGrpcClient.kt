@@ -69,6 +69,8 @@ class BankingGrpcClient(
             balance = BigDecimal.valueOf(response.balance.amount),
             currency = response.balance.currency,
             accountStatus = response.accountStatus,
+            bankCode = response.bankCode.takeIf(String::isNotBlank),
+            bankName = response.bankName.takeIf(String::isNotBlank),
             asOf = Instant.ofEpochMilli(response.asOfEpochMillis),
             transactions = response.transactionsList.map { it.toDomain() },
         )

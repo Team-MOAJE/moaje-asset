@@ -3,6 +3,7 @@
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.moaje.asset.account.application.query.BankingAccountSnapshotQuery
 import com.moaje.asset.account.application.model.AccountDetailCommand
+import com.moaje.asset.account.application.model.AccountListItem
 import com.moaje.asset.account.application.model.AccountDetailResult
 import com.moaje.asset.account.application.model.AccountTransactionCommand
 import com.moaje.asset.account.application.model.AccountTransactionItem
@@ -38,6 +39,20 @@ class AccountDetailServiceImpl(
     private val transactionTemplate: TransactionTemplate,
 ) : AccountDetailService {
 
+    @Transactional(readOnly = true)
+    override fun getAccounts(userId: String): List<AccountListItem> {
+        // 요청 본문의 사용자 ID가 아니라 검증된 Principal로 본인 계좌만 조회한다.
+        return accountRepository.findByUserId(userId).map { account ->
+            AccountListItem(
+                accountId = account.id ?: throw InvalidAccountException("계좌 ID가 없습니다."),
+                bankCode = account.bankCode,
+                bankName = account.bankName,
+                balance = account.balance,
+                status = account.status,
+            )
+        }
+    }
+
     /**
      * 계좌정보를 조회한다.
      */
@@ -52,6 +67,8 @@ class AccountDetailServiceImpl(
         if (account.syncStatus == AccountSyncStatus.RECONCILING && cached != null) { // 만약 계좌상태가 대사중이거나 캐시가 널이 아니라면, 계좌업데이트 중으로 반환
             return cached.copy(
                 syncStatus = AccountSyncStatus.RECONCILING,
+                bankCode = account.bankCode,
+                bankName = account.bankName,
                 refreshing = true,
                 refreshFailed = false,
                 message = "계좌 정보를 업데이트하고 있습니다.",
@@ -61,6 +78,8 @@ class AccountDetailServiceImpl(
         if (account.syncStatus == AccountSyncStatus.STALE && cached != null) { // 계좌정보가 오래된 상태(STALE)라면, 새로고침 불가로 반환
             return cached.copy(
                 syncStatus = AccountSyncStatus.STALE,
+                bankCode = account.bankCode,
+                bankName = account.bankName,
                 refreshing = false,
                 refreshFailed = true,
                 message = "지금은 계좌 정보를 새로고침할 수 없습니다.",
@@ -142,6 +161,8 @@ class AccountDetailServiceImpl(
         return AccountDetailResult(
             accountId = accountId,
             displayAccountNumber = "ACCOUNT-$accountId",
+            bankCode = account.bankCode,
+            bankName = account.bankName,
             maskedAccountNumber = "ACCOUNT-$accountId",
             balance = account.balance,
             syncStatus = account.syncStatus,

@@ -37,6 +37,8 @@ class BankingAccountEventConsumer(
             val account = Account(
                 id = event.accountId,
                 userId = event.userId,
+                bankCode = event.bankCode.takeIf(String::isNotBlank),
+                bankName = event.bankName.takeIf(String::isNotBlank),
                 balance = BigDecimal.valueOf(event.initialBalance),
             )
             account.markSyncRequired()
@@ -44,6 +46,9 @@ class BankingAccountEventConsumer(
         } else {
             // 같은 accountId를 다른 사용자에게 연결한 이벤트는 중복이 아니라 계약 위반이므로 DLT 대상으로 실패시킨다.
             require(existing.userId == event.userId) { "AccountCreated 계좌 소유자가 기존 Projection과 다릅니다." }
+            // 과거 이벤트로 생성된 계좌의 빈 정보만 보충하고, 이미 저장된 정보는 덮어쓰지 않는다.
+            if (existing.bankCode == null) existing.bankCode = event.bankCode.takeIf(String::isNotBlank)
+            if (existing.bankName == null) existing.bankName = event.bankName.takeIf(String::isNotBlank)
         }
 
         processedEventRepository.save(

@@ -497,6 +497,8 @@ class AssetProjectionReconciliationServiceJpaTest(
                 accountStatus = "ACTIVE",
                 asOf = Instant.parse("2026-01-01T00:01:00Z"),
                 transactions = listOf(externalTransaction("EXT-REFRESH-1", "WITHDRAWAL", "1000")),
+                bankCode = "088",
+                bankName = "테스트 은행",
             )
 
             // when
@@ -505,12 +507,22 @@ class AssetProjectionReconciliationServiceJpaTest(
             // then: 잔액뿐 아니라 이력과 다음 증분 조회 cursor까지 함께 최신화되어야 한다.
             val refreshed = accountRepository.findById(account.id!!).orElseThrow()
             assertThat(refreshed.balance).isEqualByComparingTo("9000")
+            assertThat(refreshed.bankCode).isEqualTo("088")
+            assertThat(refreshed.bankName).isEqualTo("테스트 은행")
             assertThat(refreshed.syncStatus).isEqualTo(AccountSyncStatus.SYNCED)
             assertThat(refreshed.snapshotCursorAt).isEqualTo(LocalDateTime.ofInstant(snapshot.asOf, java.time.ZoneOffset.UTC))
             assertThat(transactionHistoryRepository.findByAccountId(account.id!!))
                 .singleElement()
                 .extracting<String> { it.externalTransactionId }
                 .isEqualTo("EXT-REFRESH-1")
+
+            // 구버전 Banking의 빈 은행 정보로 재조회해도 이미 확인한 값은 지우지 않는다.
+            transferService.refreshProjectionFromSnapshot(
+                account.id!!, "user-1", refreshed.lastEventAppliedAt,
+                snapshot.copy(asOf = snapshot.asOf.plusSeconds(1), bankCode = null, bankName = null),
+            )
+            assertThat(accountRepository.findById(account.id!!).orElseThrow().bankCode).isEqualTo("088")
+            assertThat(accountRepository.findById(account.id!!).orElseThrow().bankName).isEqualTo("테스트 은행")
         }
 
         @Test
