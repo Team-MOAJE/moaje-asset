@@ -29,6 +29,7 @@ data class AccountListItem(
     val bankName: String?,
     val balance: BigDecimal,
     val status: AccountStatus,
+    val maskedAccountNumber: String? = null,
 )
 
 // 계좌 내 단건 거래내역 조회용 dto
@@ -61,8 +62,8 @@ data class AccountDetailResult(
     val accountId: Long,
     val bankCode: String? = null,
     val bankName: String? = null,
-    val displayAccountNumber: String,
-    val maskedAccountNumber: String,
+    @get:Schema(description = "본인 소유권 확인 후 제공하는 14자리 전체 계좌번호", example = "12345678901234")
+    val accountNumber: String? = null,
     val balance: BigDecimal,
     val syncStatus: AccountSyncStatus,
     val refreshing: Boolean,

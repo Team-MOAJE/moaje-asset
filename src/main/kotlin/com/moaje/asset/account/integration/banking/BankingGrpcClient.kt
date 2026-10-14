@@ -2,6 +2,13 @@ package com.moaje.asset.account.integration.banking
 
 import com.moaje.asset.account.application.model.BankingProjectionTransferStatus
 import com.moaje.asset.account.application.query.BankingAccountSnapshotQuery
+import com.moaje.asset.account.application.query.BankingAccountNumberQuery
+import com.moaje.asset.account.exception.AccountAuthFailedException
+import com.moaje.asset.account.exception.AccountNumberUnavailableException
+import com.moaje.grpc.banking.GetOwnedAccountNumberRequest
+import io.grpc.Status
+import io.grpc.StatusRuntimeException
+import org.springframework.http.HttpStatus
 import com.moaje.asset.account.application.model.BankingAccountProjectionSnapshot
 import com.moaje.asset.account.application.model.BankingExternalProjectionTransaction
 import com.moaje.asset.account.application.query.BankingTransferQuery
@@ -24,7 +31,20 @@ import java.util.concurrent.TimeUnit
 @Component
 class BankingGrpcClient(
     private val properties: BankingGrpcClientProperties,
-) : BankingTransferQuery, BankingAccountSnapshotQuery, DisposableBean {
+) : BankingTransferQuery, BankingAccountSnapshotQuery, BankingAccountNumberQuery, DisposableBean {
+    override fun getOwnedAccountNumber(accountId: Long, principalId: String): String {
+        return try {
+            client.withDeadlineAfter(properties.projectionReconciliationTimeoutMs, TimeUnit.MILLISECONDS)
+                .getOwnedAccountNumber(GetOwnedAccountNumberRequest.newBuilder()
+                    .setAccountId(accountId).setPrincipalId(principalId).build()).accountNumber
+        } catch (exception: StatusRuntimeException) {
+            if (exception.status.code == Status.Code.PERMISSION_DENIED) {
+                throw AccountAuthFailedException("본인 계좌가 아닙니다.", HttpStatus.BAD_REQUEST)
+            }
+            // 원격 오류 내용에 개인정보가 섞일 수 있어 HTTP 응답에는 고정 문구만 전달한다.
+            throw AccountNumberUnavailableException()
+        }
+    }
     private val channelDelegate = lazy {
         buildChannel()
     }
@@ -71,6 +91,7 @@ class BankingGrpcClient(
             accountStatus = response.accountStatus,
             bankCode = response.bankCode.takeIf(String::isNotBlank),
             bankName = response.bankName.takeIf(String::isNotBlank),
+            maskedAccountNumber = response.maskedAccountNumber.takeIf(String::isNotBlank),
             asOf = Instant.ofEpochMilli(response.asOfEpochMillis),
             transactions = response.transactionsList.map { it.toDomain() },
         )

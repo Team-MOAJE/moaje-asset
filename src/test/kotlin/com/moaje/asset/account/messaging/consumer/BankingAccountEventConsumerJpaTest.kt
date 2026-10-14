@@ -28,6 +28,7 @@ class BankingAccountEventConsumerJpaTest(
             .setUserId("user-1")
             .setBankCode("088")
             .setBankName("테스트 은행")
+            .setMaskedAccountNumber("**********1234")
             .setProductName("모아제 통장")
             .setInitialBalance(10_000L)
             .setCreatedAt("2026-01-01T00:00:00Z")
@@ -45,6 +46,7 @@ class BankingAccountEventConsumerJpaTest(
         assertThat(account.userId).isEqualTo("user-1")
         assertThat(account.bankCode).isEqualTo("088")
         assertThat(account.bankName).isEqualTo("테스트 은행")
+        assertThat(account.maskedAccountNumber).isEqualTo("**********1234")
         assertThat(account.balance).isEqualByComparingTo("10000")
         assertThat(account.syncStatus).isEqualTo(AccountSyncStatus.SYNC_REQUIRED)
         assertThat(processedEventRepository.count()).isEqualTo(1)
@@ -63,5 +65,6 @@ class BankingAccountEventConsumerJpaTest(
         val account = accountRepository.findById(7002L).orElseThrow()
         assertThat(account.bankCode).isEqualTo("004")
         assertThat(account.bankName).isNull()
+        assertThat(account.maskedAccountNumber).isNull()
     }
 }

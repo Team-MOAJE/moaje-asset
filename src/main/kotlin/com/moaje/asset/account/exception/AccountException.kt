@@ -8,6 +8,10 @@ sealed class AccountException(
     val status: HttpStatus,
 ) : RuntimeException(errorMsg)
 
+class AccountNumberUnavailableException : AccountException(
+    "ACCOUNT_NUMBER_UNAVAILABLE", "계좌번호를 조회할 수 없습니다. 잠시 후 다시 시도해 주세요.", HttpStatus.BAD_GATEWAY,
+)
+
 
 /**
  * 계좌 거래내역을 찾을 수 없음.

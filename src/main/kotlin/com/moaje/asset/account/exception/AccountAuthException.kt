@@ -9,8 +9,8 @@ sealed class AccountAuthException(
 ) : RuntimeException(errorMsg)
 
 
-class AccountAuthFailedException(errorMsg: String = "잘못된 요청입니다.") :
-    AccountAuthException("DUPLICATE_AUTH",errorMsg, HttpStatus.FORBIDDEN)
+class AccountAuthFailedException(errorMsg: String = "잘못된 요청입니다.", status: HttpStatus = HttpStatus.FORBIDDEN) :
+    AccountAuthException("DUPLICATE_AUTH",errorMsg, status)
 
 class InvalidAccountException(errorMsg: String = "잘못된 요청입니다.") :
     AccountAuthException("ACCOUNT_NOT_FOUND",errorMsg, HttpStatus.NOT_FOUND)

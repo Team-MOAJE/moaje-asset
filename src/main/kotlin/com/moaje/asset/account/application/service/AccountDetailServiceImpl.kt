@@ -2,6 +2,9 @@
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.moaje.asset.account.application.query.BankingAccountSnapshotQuery
+import com.moaje.asset.account.application.query.BankingAccountNumberQuery
+import com.moaje.asset.account.exception.AccountNumberUnavailableException
+import org.springframework.http.HttpStatus
 import com.moaje.asset.account.application.model.AccountDetailCommand
 import com.moaje.asset.account.application.model.AccountListItem
 import com.moaje.asset.account.application.model.AccountDetailResult
@@ -37,6 +40,7 @@ class AccountDetailServiceImpl(
     private val bankingAccountSnapshotQuery: BankingAccountSnapshotQuery,
     private val transferServiceImpl: TransferServiceImpl,
     private val transactionTemplate: TransactionTemplate,
+    private val bankingAccountNumberQuery: BankingAccountNumberQuery,
 ) : AccountDetailService {
 
     @Transactional(readOnly = true)
@@ -49,53 +53,54 @@ class AccountDetailServiceImpl(
                 bankName = account.bankName,
                 balance = account.balance,
                 status = account.status,
+                maskedAccountNumber = account.maskedAccountNumber,
             )
         }
     }
 
     /**
-     * 계좌정보를 조회한다.
+     * 소유권을 확인한 조회 모델만 캐시하고, 전체 번호는 원격 확인 후 응답에만 붙인다.
+     * 번호를 조회하는 동안 DB 트랜잭션을 열어 두거나 Redis에 원번호를 저장하지 않는다.
      */
-    @Transactional(readOnly = true)
     override fun getDetail(command: AccountDetailCommand): AccountDetailResult {
-        val account = accountRepository.findById(command.accountId).orElse(null)
-            ?: throw InvalidAccountException("계좌를 찾을 수 없습니다.")
-
-        require(account.userId == command.userId) { throw AccountAuthFailedException("사용자의 계좌가 아니거나 유효하지 않습니다.") }
-
-        val cached = readCachedDetail(command.accountId) // redis에서 계좌데이터를 가져온다.
-        if (account.syncStatus == AccountSyncStatus.RECONCILING && cached != null) { // 만약 계좌상태가 대사중이거나 캐시가 널이 아니라면, 계좌업데이트 중으로 반환
-            return cached.copy(
-                syncStatus = AccountSyncStatus.RECONCILING,
-                bankCode = account.bankCode,
-                bankName = account.bankName,
-                refreshing = true,
-                refreshFailed = false,
-                message = "계좌 정보를 업데이트하고 있습니다.",
-            )
-        }
-
-        if (account.syncStatus == AccountSyncStatus.STALE && cached != null) { // 계좌정보가 오래된 상태(STALE)라면, 새로고침 불가로 반환
-            return cached.copy(
-                syncStatus = AccountSyncStatus.STALE,
-                bankCode = account.bankCode,
-                bankName = account.bankName,
-                refreshing = false,
-                refreshFailed = true,
-                message = "지금은 계좌 정보를 새로고침할 수 없습니다.",
-            )
-        }
-        val detail = buildDetail(account)
+        requireOwnedAccount(command)
+        val cached = readCachedDetail(command.accountId)
+        val detail = transactionTemplate.execute {
+            val account = requireOwnedAccount(command)
+            if (cached != null && account.syncStatus in setOf(AccountSyncStatus.RECONCILING, AccountSyncStatus.STALE)) {
+                cached.copy(
+                    accountNumber = null,
+                    syncStatus = account.syncStatus,
+                    bankCode = account.bankCode,
+                    bankName = account.bankName,
+                    refreshing = account.syncStatus == AccountSyncStatus.RECONCILING,
+                    refreshFailed = account.syncStatus == AccountSyncStatus.STALE,
+                    message = account.syncStatus.toMessage(),
+                )
+            } else {
+                buildDetail(account)
+            }
+        } ?: throw AccountRefreshFailedException("계좌 상세를 만들 수 없습니다.")
         writeCacheDetail(detail)
-        return detail
+        return attachOwnedAccountNumber(detail, command)
+    }
+
+    private fun requireOwnedAccount(command: AccountDetailCommand): Account {
+        val account = accountRepository.findById(command.accountId).orElseThrow { InvalidAccountException("계좌를 찾을 수 없습니다.") }
+        if (account.userId != command.userId) {
+            throw AccountAuthFailedException("본인 계좌가 아닙니다.", HttpStatus.BAD_REQUEST)
+        }
+        return account
+    }
+
+    private fun attachOwnedAccountNumber(detail: AccountDetailResult, command: AccountDetailCommand): AccountDetailResult {
+        val number = bankingAccountNumberQuery.getOwnedAccountNumber(command.accountId, command.userId)
+        if (!number.matches(Regex("[0-9]{14}"))) throw AccountNumberUnavailableException()
+        return detail.copy(accountNumber = number)
     }
 
     override fun getRefreshAccountDetail(command: AccountDetailCommand): AccountDetailResult {
-        val account = accountRepository.findById(command.accountId).orElseThrow {
-            InvalidAccountException("계좌를 찾을 수 없습니다.")
-        }
-
-        require(account.userId == command.userId) { throw AccountAuthFailedException("사용자의 계좌가 아니거나 유효하지 않습니다.") }
+        val account = requireOwnedAccount(command)
         val accountId = account.id ?: throw InvalidAccountException("계좌 ID가 없습니다.")
         val requestedCursor = account.snapshotCursorAt?.toInstant(ZoneOffset.UTC) ?: EPOCH
         val beforeLastEventAppliedAt = account.lastEventAppliedAt // Asset DB 조회 당시 계좌의 이벤트 반영시각
@@ -132,7 +137,7 @@ class AccountDetailServiceImpl(
         // DB 반영이 끝난뒤 Redis cache 교체
         writeCacheDetail(savedAccountInfo)
 
-        return savedAccountInfo
+        return attachOwnedAccountNumber(savedAccountInfo, command)
     }
 
     @Transactional(readOnly = true)
@@ -160,10 +165,8 @@ class AccountDetailServiceImpl(
 
         return AccountDetailResult(
             accountId = accountId,
-            displayAccountNumber = "ACCOUNT-$accountId",
             bankCode = account.bankCode,
             bankName = account.bankName,
-            maskedAccountNumber = "ACCOUNT-$accountId",
             balance = account.balance,
             syncStatus = account.syncStatus,
             refreshing = account.syncStatus == AccountSyncStatus.RECONCILING,
@@ -224,7 +227,7 @@ class AccountDetailServiceImpl(
     private fun writeCacheDetail(detail: AccountDetailResult) {
         redisTemplate.opsForValue().set(
             cacheKey(detail.accountId),
-            objectMapper.writeValueAsString(detail),
+            objectMapper.writeValueAsString(detail.copy(accountNumber = null)),
             1,
             TimeUnit.DAYS,
         )

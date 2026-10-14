@@ -499,6 +499,7 @@ class AssetProjectionReconciliationServiceJpaTest(
                 transactions = listOf(externalTransaction("EXT-REFRESH-1", "WITHDRAWAL", "1000")),
                 bankCode = "088",
                 bankName = "테스트 은행",
+                maskedAccountNumber = "**********1234",
             )
 
             // when
@@ -509,6 +510,7 @@ class AssetProjectionReconciliationServiceJpaTest(
             assertThat(refreshed.balance).isEqualByComparingTo("9000")
             assertThat(refreshed.bankCode).isEqualTo("088")
             assertThat(refreshed.bankName).isEqualTo("테스트 은행")
+            assertThat(refreshed.maskedAccountNumber).isEqualTo("**********1234")
             assertThat(refreshed.syncStatus).isEqualTo(AccountSyncStatus.SYNCED)
             assertThat(refreshed.snapshotCursorAt).isEqualTo(LocalDateTime.ofInstant(snapshot.asOf, java.time.ZoneOffset.UTC))
             assertThat(transactionHistoryRepository.findByAccountId(account.id!!))

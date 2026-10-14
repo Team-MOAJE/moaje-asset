@@ -34,6 +34,7 @@ class AccountDetailServiceImplPaginationTest {
         bankingAccountSnapshotQuery = Mockito.mock(BankingAccountSnapshotQuery::class.java),
         transferServiceImpl = Mockito.mock(TransferServiceImpl::class.java),
         transactionTemplate = Mockito.mock(TransactionTemplate::class.java),
+        bankingAccountNumberQuery = Mockito.mock(com.moaje.asset.account.application.query.BankingAccountNumberQuery::class.java),
     )
 
     @Nested

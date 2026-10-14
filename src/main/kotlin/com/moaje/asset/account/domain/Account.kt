@@ -37,6 +37,10 @@ class Account(
     @Column(name = "bank_name", length = 100)
     var bankName: String? = null,
 
+    // 목록 표시용 값만 보관한다. 원번호나 ACCOUNT-id 같은 대체 번호를 저장하지 않는다.
+    @Column(name = "masked_account_number", length = 100)
+    var maskedAccountNumber: String? = null,
+
     @Column(name = "balance", nullable = false, precision = 18, scale = 4)
     var balance: BigDecimal = BigDecimal.ZERO,
 

@@ -2,6 +2,7 @@ package com.moaje.asset.account.web
 
 import com.moaje.asset.account.exception.AccountAuthFailedException
 import com.moaje.asset.account.exception.AccountRefreshFailedException
+import com.moaje.asset.account.exception.AccountNumberUnavailableException
 import com.moaje.asset.account.exception.InvalidAccountException
 import com.moaje.asset.account.exception.NotFoundAccountTransferHistory
 import jakarta.servlet.http.HttpServletRequest
@@ -13,6 +14,9 @@ import java.net.URI
 
 @RestControllerAdvice
 class AccountExceptionHandler {
+    @ExceptionHandler(AccountNumberUnavailableException::class)
+    fun handleAccountNumberUnavailable(ex: AccountNumberUnavailableException): ResponseEntity<ProblemDetail> =
+        ResponseEntity.status(ex.status).body(ProblemDetail.forStatusAndDetail(ex.status, ex.errorMsg).apply { title = ex.errorCode })
 
     @ExceptionHandler(AccountAuthFailedException::class)
     fun handleAccountAuthFailedException(ex: AccountAuthFailedException, request: HttpServletRequest): ResponseEntity<ProblemDetail> {

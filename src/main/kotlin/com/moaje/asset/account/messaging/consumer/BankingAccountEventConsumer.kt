@@ -39,6 +39,7 @@ class BankingAccountEventConsumer(
                 userId = event.userId,
                 bankCode = event.bankCode.takeIf(String::isNotBlank),
                 bankName = event.bankName.takeIf(String::isNotBlank),
+                maskedAccountNumber = event.maskedAccountNumber.takeIf(String::isNotBlank),
                 balance = BigDecimal.valueOf(event.initialBalance),
             )
             account.markSyncRequired()
@@ -49,6 +50,7 @@ class BankingAccountEventConsumer(
             // 과거 이벤트로 생성된 계좌의 빈 정보만 보충하고, 이미 저장된 정보는 덮어쓰지 않는다.
             if (existing.bankCode == null) existing.bankCode = event.bankCode.takeIf(String::isNotBlank)
             if (existing.bankName == null) existing.bankName = event.bankName.takeIf(String::isNotBlank)
+            if (existing.maskedAccountNumber == null) existing.maskedAccountNumber = event.maskedAccountNumber.takeIf(String::isNotBlank)
         }
 
         processedEventRepository.save(
